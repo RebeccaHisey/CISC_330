@@ -298,7 +298,7 @@ class IntersectionsLogic(ScriptedLoadableModuleLogic):
             l0_2 = listOfLines[j]
             l1_2 = listOfLines[j+1]
             iAndDistance = iAndDistance + [logic.TwoLines(l0_1, l1_1, l0_2, l1_2)]
-            print(str(logic.TwoLines(l0_1, l1_1, l0_2, l1_2)))
+            
 
     numIntersections = len(iAndDistance)
     
@@ -311,9 +311,7 @@ class IntersectionsLogic(ScriptedLoadableModuleLogic):
         xCoord += iAndDistance[n][0].item(0)
         yCoord += iAndDistance[n][0].item(1)
         zCoord += iAndDistance[n][0].item(2)
-        print(str(iAndDistance[n][1]))
         allDistances.append(iAndDistance[n][1])
-        print(str(allDistances))
     
 
     xCoord = xCoord / numIntersections
@@ -390,9 +388,12 @@ class IntersectionsTest(ScriptedLoadableModuleTest):
     """Run as few or as many tests as needed here.
     """
     self.setUp()
-    #self.testLineAndPlaneIntersection()
-    #self.testTwoLines()
-    #self.testNLines()
+    self.testLineAndPlaneIntersection()
+    self.setUp()
+    self.testTwoLines()
+    self.setUp()
+    self.testNLines()
+    self.setUp()
     self.testLineAndEllipsoid()
 
   # Tests the logic function LineAndPlane
