@@ -389,11 +389,8 @@ class IntersectionsTest(ScriptedLoadableModuleTest):
     """
     self.setUp()
     self.testLineAndPlaneIntersection()
-    self.setUp()
     self.testTwoLines()
-    self.setUp()
     self.testNLines()
-    self.setUp()
     self.testLineAndEllipsoid()
 
   # Tests the logic function LineAndPlane
