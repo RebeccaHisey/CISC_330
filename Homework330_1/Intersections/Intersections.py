@@ -38,6 +38,9 @@ class IntersectionsWidget(ScriptedLoadableModuleWidget):
   """Uses ScriptedLoadableModuleWidget base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
+  def __init__(self, parent=None):
+    ScriptedLoadableModuleWidget.__init__(self, parent)
+    self.logic = IntersectionsLogic()
 
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)

@@ -39,6 +39,10 @@ class SimAndReconWidget(ScriptedLoadableModuleWidget):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
+  def __init__(self, parent=None):
+    ScriptedLoadableModuleWidget.__init__(self, parent)
+    self.logic = SimAndReconLogic()
+
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
 
@@ -228,7 +232,7 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
 
     #find the std deviation by taking the square root and rounds to 3 decimal places
     error = math.sqrt(sumSquare / len(initial))
-    error = round(error,1)
+    error = round(error,2)
     
     return error
 
@@ -242,6 +246,10 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
   # Returns:
   #    dataPoints: the simulated datapoints on the sphere
   def SphereSim(self, ctr, radius, numPoints, maxOff):
+      
+    self.sphereFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+    self.sphereFiducials.SetName('Sphere')
+    slicer.mrmlScene.AddNode(self.sphereFiducials)
     
     dataPoints = []
 
@@ -258,6 +266,8 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
         z = radius*math.cos(psi) + ctr[2] + zOffset
         
         dataPoints.append(numpy.array([x,y,z]))
+    for i in range(0, len(dataPoints)):
+        self.sphereFiducials.AddFiducial(dataPoints[i][0], dataPoints[i][1], dataPoints[i][2])
     
     return dataPoints
   
@@ -275,14 +285,13 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
     logic = SimAndReconLogic()
     
     #create a list of data points on the sphere
-    data = logic.SphereSim(ctr, radius, numPoints, maxOff)
-  
-    # see github wiki for explanation
-    M = numpy.matrix([data[0][0], data[0][1], data[0][2], 1])
-    b = numpy.matrix([(-1)*(numpy.dot(data[0],data[0]))])
+    dataPoints = logic.SphereSim(ctr, radius, numPoints, maxOff)
+
+    M = numpy.matrix([-2*dataPoints[0][0], -2*dataPoints[0][1], -2*dataPoints[0][2], 1])
+    b = numpy.matrix([(-1)*(numpy.dot(dataPoints[0],dataPoints[0]))])
     for n in range(1,numPoints):
-        M = numpy.append(M, [[data[n][0], data[n][1], data[n][2], 1]], axis = 0)
-        b = numpy.append(b, [[(-1)*(numpy.dot(data[n],data[n]))]], axis = 0)
+        M = numpy.append(M, [[-2*dataPoints[n][0], -2*dataPoints[n][1], -2*dataPoints[n][2], 1]], axis = 0)
+        b = numpy.append(b, [[(-1)*(numpy.dot(dataPoints[n],dataPoints[n]))]], axis = 0)
 
     ctrAndSigma = numpy.matrix.getI(M)*b
     
@@ -291,7 +300,7 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
         
     cradius = round(math.sqrt(numpy.dot(cctr,cctr) - sigma),1)
     
-    cctr = [round(cctr[0],1), round(cctr[1],1), round(cctr[2],1)]
+    cctr = [round(cctr[0],2), round(cctr[1],2), round(cctr[2],2)]
     
     initial = [ctr[0], ctr[1], ctr[2], radius]
     computed = [cctr[0], cctr[1], cctr[2], cradius]
@@ -308,6 +317,10 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
   # Returns:
   #    dataPoints: the offset points along the line
   def LineSim(self, A, B, numPoints, maxOff):
+    self.lineFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+    self.lineFiducials.SetName('Line')
+    slicer.mrmlScene.AddNode(self.lineFiducials)
+
     l = B - A
     length = numpy.linalg.norm(l)
     if length == 0:
@@ -322,7 +335,10 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
         t = numpy.random.uniform(-100, 100)
         point = (A - t*l)+ numpy.array([xOffset, yOffset, zOffset])
         dataPoints.append(point)
-            
+
+    for i in range(0, len(dataPoints)):
+        self.lineFiducials.AddFiducial(dataPoints[i][0], dataPoints[i][1], dataPoints[i][2])
+    
     return dataPoints
 
   # Reconstructs a line from the simulation
@@ -339,19 +355,21 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
     dataPoints = logic.LineSim(A,B,numPoints,maxOff) #simulate line
   
     # find the average of the data (holding point)
-    Mx = 0
-    My = 0
-    Mz = 0
+    Meanx = 0
+    Meany = 0
+    Meanz = 0
     for i in range(0,numPoints):
-        Mx += dataPoints[i][0]
-        My += dataPoints[i][1]
-        Mz += dataPoints[i][2]
-    M = numpy.array([Mx/numPoints, My/numPoints, Mz/numPoints])
+        Meanx += dataPoints[i][0]
+        Meany += dataPoints[i][1]
+        Meanz += dataPoints[i][2]
+    Mean = numpy.array([Meanx/numPoints, Meany/numPoints, Meanz/numPoints])
 
     # Sum all vectors from the holding point to each data point and find the average
-    v = dataPoints[0] - M
+    v = dataPoints[0] - Mean
     for j in range(1,numPoints):
-        vi = dataPoints[j] - M
+        vi = dataPoints[j] - Mean
+        if vi[0] < 0:
+            vi = -1*vi
         v += vi
     v = v / numPoints
     length = numpy.linalg.norm(v)
@@ -359,7 +377,7 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
         print('length is zero')
         return
     v = v / length
-    v = numpy.array([round(v[0],1), round(v[1],1), round(v[2],1)])
+    v = numpy.array([round(v[0],2), round(v[1],2), round(v[2],2)])
 
     l = B - A
     length = numpy.linalg.norm(l)
@@ -375,7 +393,7 @@ class SimAndReconLogic(ScriptedLoadableModuleLogic):
 
     error = logic.findError(l,v)
     
-    return ([round(M[0],1), round(M[1],1), round(M[2],1)], v, error)
+    return ([round(Mean[0],1), round(Mean[1],1), round(Mean[2],1)], v, error)
         
   def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
     """
@@ -439,7 +457,7 @@ class SimAndReconTest(ScriptedLoadableModuleTest):
         print('A and B are the same point')
         return
     l = l / length
-    l = [round(l[0],1), round(l[1],1), round(l[2],1)]
+    l = [round(l[0],2), round(l[1],2), round(l[2],2)]
     
     error = []
     for x in range(0,11):

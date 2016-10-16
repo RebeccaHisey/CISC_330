@@ -38,6 +38,9 @@ class TransformationsWidget(ScriptedLoadableModuleWidget):
   """Uses ScriptedLoadableModuleWidget base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
+  def __init__(self, parent=None):
+    ScriptedLoadableModuleWidget.__init__(self, parent)
+    self.logic = TransformationsLogic()
 
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
@@ -225,47 +228,86 @@ class TransformationsLogic(ScriptedLoadableModuleLogic):
     ctrX = ((A[0]+B[0]+C[0])/3)
     ctrY = ((A[1]+B[1]+C[1])/3)
     ctrZ = ((A[2]+B[2]+C[2])/3)
-    ctr = numpy.array([ctrX,ctrY,ctrZ])
+    ctr = numpy.array([round(ctrX,4),round(ctrY,4),round(ctrZ,4)])
     
     #find 3 vectors from the center of gravity to each of the points
-    x = A - ctr
-    y = B - ctr
-    z = C - ctr
+    vectorA = A - ctr
+    vectorB = B - ctr
+    vectorC = C - ctr
+    
+    vectorsABCAsMatrix = numpy.matrix([[vectorA[0],vectorB[0],vectorC[0]],
+                                [vectorA[1],vectorB[1],vectorC[1]],
+                                [vectorA[2],vectorB[2],vectorC[2]]])
 
-    # compute the basis vectors using Gram-Schmidt process
-    length = numpy.linalg.norm(x)
-    if length == 0:
-        e1 = x
-    else:
-        e1 = x / length
-
-    e2 = (y - ((numpy.dot(e1,y)*e1)))
-    lengthE2 = numpy.linalg.norm(e2)
-    if lengthE2 == 0: # vector space is spanned by less than 3 vectors
-        e2 = (z - (numpy.dot(z,e1)*(e1)))
-        lengthE2 = numpy.linalg.norm(e2)
-        if lengthE2 == 0:
-            print ('Error: Vector space is spanned by only 1 vector')
-            return
-    else:
-        e2 = e2 / lengthE2
-
-    e3 = (z - (numpy.dot(e1,z)*e1) - (numpy.dot(e2,z)*e2))
-    lengthE3 = numpy.linalg.norm(e3)
-    if lengthE3 == 0: #vector space is spanned by only 2 vectors
-        e3 = numpy.cross(e1,e2)
-        lengthE3 = numpy.linalg.norm(e3)
-        if lengthE3 == 0:
-            print ('Error: e1, e2 parallel')
-            return
-        e3 = e3 / lengthE3
-        print ('  Vector space provided by points is spanned by only 2 vectors')
-        print ('  E3 is a unit vector perpendicular to e1 and e2')
-    else:
-        e3 = e3 / lengthE3
+    q,r = numpy.linalg.qr(vectorsABCAsMatrix)
+    e1 = numpy.array([q.item(0),q.item(3),q.item(6)])
+    e2 = numpy.array([q.item(1),q.item(4),q.item(7)])
+    e3 = numpy.array([q.item(2),q.item(5),q.item(8)])
 
     return (e1, e2, e3, ctr)
+
+# Computes the homogeneous transformation matrix between two sets of 3 points
+# Parameters:
+#    A1, B1, C1: 3 points
+#    A2, B2, C2: the transformed images of A1,B1, and C1 respectively
+# Returns:
+#    transformationMatrix: the homogeneous transformation matrix that takes us from points A1, B1, C1 to A2, B2, C2
+  def RigidBodyTransformation(self, A1, B1, C1, A2, B2, C2):
+    # find the center of gravity (mean) of each of the 2 sets of points
+    ctrX = ((A1[0]+B1[0]+C1[0])/3)
+    ctrY = ((A1[1]+B1[1]+C1[1])/3)
+    ctrZ = ((A1[2]+B1[2]+C1[2])/3)
+    ctr1 = numpy.array([round(ctrX,4),round(ctrY,4),round(ctrZ,4)])
     
+    ctrX = ((A2[0]+B2[0]+C2[0])/3)
+    ctrY = ((A2[1]+B2[1]+C2[1])/3)
+    ctrZ = ((A2[2]+B2[2]+C2[2])/3)
+    ctr2 = numpy.array([round(ctrX,4),round(ctrY,4),round(ctrZ,4)])
+    
+    #subtract the mean from each of the points in the set
+    #now the 2 sets are related by only the rotation matrix
+    newA1 = A1 - ctr1
+    newA1 = numpy.array([[newA1[0]],[newA1[1]],[newA1[2]]])
+    newB1 = B1 - ctr1
+    newB1 = numpy.array([[newB1[0]],[newB1[1]],[newB1[2]]])
+    newC1 = C1 - ctr1
+    newC1 = numpy.array([[newC1[0]],[newC1[1]],[newC1[2]]])
+    
+    newA2Row = A2 - ctr2
+    newB2Row = B2 - ctr2
+    newC2Row = C2 - ctr2
+
+    # Compute the rotation matrix using single value decomposition
+    sumOuterProducts = (newA1*newA2Row) + (newB1*newB2Row) + (newC1*newC2Row)
+    U,s,Vt = numpy.linalg.svd(sumOuterProducts)
+    V= numpy.matrix.transpose(Vt)
+    detVU = numpy.linalg.det(numpy.dot(V,U))
+    diagonal = numpy.matrix([[1,0,0],
+                             [0,1,0],
+                             [0,0,detVU]])
+    Rotation =numpy.round(numpy.dot(V,numpy.dot(diagonal,numpy.transpose(U))),3)
+    
+    homogeneousRotation = numpy.matrix([[Rotation.item(0),Rotation.item(1),Rotation.item(2),0],
+                                        [Rotation.item(3),Rotation.item(4),Rotation.item(5),0],
+                                        [Rotation.item(6),Rotation.item(7),Rotation.item(8),0],
+                                        [0,0,0,1]])
+    
+    #compute the translation vector
+    translation = numpy.array([[A2[0]],[A2[1]],[A2[2]],[1]]) - numpy.dot(homogeneousRotation,numpy.array([[A1[0]],[A1[1]],[A1[2]],[1]]))
+    
+    homogeneousTranslation = numpy.matrix([[1,0,0,translation.item(0)],
+                                           [0,1,0,translation.item(1)],
+                                           [0,0,1,translation.item(2)],
+                                           [0,0,0,1]])
+                                           
+    # transformation matrix is the translation matrix * rotation matrix
+    transformationMatrix = numpy.round(numpy.dot(homogeneousTranslation, homogeneousRotation),3)
+    
+    print ('Computed rotation matrix:\n' + str(homogeneousRotation))
+    print ('Computed translation matrix:\n' + str(homogeneousTranslation))
+
+    return transformationMatrix
+  
   def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
     """
     Run the actual algorithm
@@ -285,6 +327,10 @@ class TransformationsTest(ScriptedLoadableModuleTest):
     """ Do whatever is needed to reset the state - typically a scene clear will be enough.
     """
     slicer.mrmlScene.Clear(0)
+  
+    self.lineFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+    self.lineFiducials.SetName('Line')
+    slicer.mrmlScene.AddNode(self.lineFiducials)
 
   def runTest(self):
     """Run as few or as many tests as needed here.
@@ -292,6 +338,10 @@ class TransformationsTest(ScriptedLoadableModuleTest):
     self.setUp()
     print('Find Orthonormal Coordinate system:')
     self.testOrthoNormalCoordSystem()
+    print('\nTest 1 Rigid Body transformation function: (rotation about Z axis and translation)')
+    self.testRigidBodyTransformation1()
+    print('\nTest 2 Rigid Body transformation function: (rotation about Z axis then X axis and translation)')
+    self.testRigidBodyTransformation2()
 
   # Tests the logic function OrthoNormalCoordSystem
   def testOrthoNormalCoordSystem(self):
@@ -322,8 +372,92 @@ class TransformationsTest(ScriptedLoadableModuleTest):
     print ('  Dot product e1 & e3: ' + str(round(numpy.dot(e1,e3),1)))
     print ('  Dot product e2 & e3: ' + str(round(numpy.dot(e2,e3),1)))
 
+  def testRigidBodyTransformation1(self):
+    A1 = numpy.array([[0],[5],[1],[1]])
+    B1 = numpy.array([[4],[0],[3],[1]])
+    C1 = numpy.array([[1],[9],[7],[1]])
 
+    RotationMatrix = numpy.matrix([[0.5,-0.866,0,0],
+                                   [0.866,0.5,0,0],
+                                   [0,0,1,0],
+                                   [0,0,0,1]])
 
+    translationMatrix = numpy.matrix([[1,0,0,1],
+                                      [0,1,0,-8],
+                                      [0,0,1,-4],
+                                      [0,0,0,1]])
+
+    transformationMatrix = numpy.dot(translationMatrix,RotationMatrix)
+    
+    print ('Original rotation matrix:\n' + str(RotationMatrix))
+    print ('Original translation matrix:\n' + str(translationMatrix))
+    print ('Original transformation matrix:\n' + str(transformationMatrix) + '\n')
+    
+    A2 = transformationMatrix*A1
+    B2 = transformationMatrix*B1
+    C2 = transformationMatrix*C1
+
+    A1 = numpy.array([0,5,1])
+    B1 = numpy.array([4,0,3])
+    C1 = numpy.array([1,9,7])
+    
+    A2 = numpy.array([A2.item(0),A2.item(1),A2.item(2)])
+    B2 = numpy.array([B2.item(0),B2.item(1),B2.item(2)])
+    C2 = numpy.array([C2.item(0),C2.item(1),C2.item(2)])
+
+    logic = TransformationsLogic()
+
+    cTransformationMatrix = logic.RigidBodyTransformation(A1, B1, C1, A2, B2, C2)
+    
+   
+
+    print ('\nComputed transformation matrix:\n' + str(cTransformationMatrix))
+
+  def testRigidBodyTransformation2(self):
+    A1 = numpy.array([[2],[5],[7],[1]])
+    B1 = numpy.array([[1],[6],[3],[1]])
+    C1 = numpy.array([[8],[1],[4],[1]])
+    
+    #rotate 70 degrees about Z axis, then 60
+    RotationMatrixZ = numpy.matrix([[0.342,-0.940,0,0],
+                                   [0.940,0.342,0,0],
+                                   [0,0,1,0],
+                                   [0,0,0,1]])
+    RotationMatrixX = numpy.matrix([[1,0,0,0],
+                                    [0,0.5,0.866,0],
+                                    [0,-0.866,0.5,0],
+                                    [0,0,0,1]])
+                                    
+    RotationMatrix = numpy.dot(RotationMatrixX, RotationMatrixZ)
+        
+    translationMatrix = numpy.matrix([[1,0,0,1],
+                                      [0,1,0,-8],
+                                      [0,0,1,-4],
+                                      [0,0,0,1]])
+                                   
+    transformationMatrix = numpy.dot(translationMatrix,RotationMatrix)
+                                   
+    print ('Original rotation matrix:\n' + str(RotationMatrix))
+    print ('Original translation matrix:\n' + str(translationMatrix))
+    print ('Original transformation matrix:\n' + str(transformationMatrix) + '\n')
+                                   
+    A2 = transformationMatrix*A1
+    B2 = transformationMatrix*B1
+    C2 = transformationMatrix*C1
+                                   
+    A1 = numpy.array([2,5,7])
+    B1 = numpy.array([1,6,3])
+    C1 = numpy.array([8,1,4])
+                                   
+    A2 = numpy.array([A2.item(0),A2.item(1),A2.item(2)])
+    B2 = numpy.array([B2.item(0),B2.item(1),B2.item(2)])
+    C2 = numpy.array([C2.item(0),C2.item(1),C2.item(2)])
+                                   
+    logic = TransformationsLogic()
+                                   
+    cTransformationMatrix = logic.RigidBodyTransformation(A1, B1, C1, A2, B2, C2)
+    
+    print ('\nComputed transformation matrix:\n' + str(cTransformationMatrix))
 
 
 
