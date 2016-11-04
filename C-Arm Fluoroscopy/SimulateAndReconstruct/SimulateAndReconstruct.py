@@ -314,6 +314,9 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     return projectedPoints
 
   def ReconstructTumour(self,numImages, angles, images):
+      self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+      self.ImageFiducials.SetName('Image')
+      slicer.mrmlScene.AddNode(self.ImageFiducials)
       logic = SimulateAndReconstructLogic()
       reconstructionPoints = []
       for i in range(0,numImages):
@@ -335,8 +338,9 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
               projectedPointSourceDistance = (750*1500)/imagePointSourceDistance
               imageProjectedPointDisance = imagePointSourceDistance - projectedPointSourceDistance
               projectedPoint = images[i][j] + imageProjectedPointDisance*pointSourceLine
+              self.ImageFiducials.AddFiducial(projectedPoint[0],projectedPoint[1],projectedPoint[2])
               reconstructionPoints.append(projectedPoint)
-      surfaceArea,Volume = logic.createSurface(numPoints,reconstructionPoints)
+      surfaceArea,Volume = logic.createSurface(numImages*numPoints,reconstructionPoints)
 
       return (surfaceArea,Volume)
 
@@ -518,8 +522,14 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
 
           for i in range(0, 10):
               contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
-          print 'rotated'
-          print contours[1]
+
+          self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+          self.ImageFiducials.SetName('Image')
+          slicer.mrmlScene.AddNode(self.ImageFiducials)
+
+          for i in range(0,len(contours)):
+              for j in range(0,len(contours[i])):
+                  self.ImageFiducials.AddFiducial(contours[i][j][0],contours[i][j][1],contours[i][j][2])
 
           (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
           print surfaceArea
