@@ -462,7 +462,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           self.Image2Fiducials.AddFiducial(x , y ,z)
 
 
-  def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
+def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
     """
     Run the actual algorithm
     """
@@ -504,7 +504,8 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
     self.setUp()
     self.TestSimulatorWithOneImage()
     self.TestSimulatorWithTwoImages()
-    self.TestReconstructor()
+    #self.TestReconstructor()
+    self.TestReconstructor2()
 
   def TestSimulatorWithOneImage(self):
       logic = SimulateAndReconstructLogic()
@@ -534,3 +535,46 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
           surfaceAreaRatio = surfaceArea/surfaceAreaSphere
           print 'Surface Area ratio: ' + str(surfaceAreaRatio)
           print 'Volume Ratio: ' + str(volumeRatio)
+
+
+  def TestReconstructor2(self):
+    logic = SimulateAndReconstructLogic()
+
+    angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
+              (45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
+              (-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
+
+    contours = []
+    for i in range(0, 10):
+        contour = logic.Simulator(1, 0.15)[0]
+        contours.append(contour)
+
+    for i in range(0, 10):
+        contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
+
+    (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
+    VolumeSphere = 65449.5
+    surfaceAreaSphere = 7854
+    volumeRatio = Volume / VolumeSphere
+    surfaceAreaRatio = surfaceArea / surfaceAreaSphere
+    sphere = vtk.vtkSphereSource()
+    sphere.SetCenter([0, 0, 0])
+    radius = 25
+    sphere.SetRadius(radius)
+    sphere.SetPhiResolution(30)
+    sphere.SetThetaResolution(30)
+    sphere.Update()
+
+    # Get a reference to the markup
+
+    # Create model node and add to scene
+    model = slicer.vtkMRMLModelNode()
+    model.SetAndObservePolyData(sphere.GetOutput())
+    modelDisplay = slicer.vtkMRMLModelDisplayNode()
+    modelDisplay.SetVisibility(True)  # Hide in 3D view
+    slicer.mrmlScene.AddNode(modelDisplay)
+    model.SetAndObserveDisplayNodeID(modelDisplay.GetID())
+    slicer.mrmlScene.AddNode(model)
+
+    print 'Surface Area ratio: ' + str(surfaceAreaRatio)
+    print 'Volume Ratio: ' + str(volumeRatio)
