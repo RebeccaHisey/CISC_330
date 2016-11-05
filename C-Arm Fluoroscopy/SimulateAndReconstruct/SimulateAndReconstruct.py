@@ -40,6 +40,10 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
+  def __init__(self, parent=None):
+      ScriptedLoadableModuleWidget.__init__(self, parent)
+      self.logic = SimulateAndReconstructLogic()
+
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
 
@@ -395,7 +399,6 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
       zRotationMatrix = numpy.matrix([[numpy.cos(zRotation), numpy.sin(zRotation), 0],
                                       [(-1) * numpy.sin(zRotation), numpy.cos(zRotation), 0],
                                       [0, 0, 1]])
-      print contour[0]
       matrix = numpy.matrix([contour[0]])
       for i in range(1,len(contour)):
           matrix = numpy.append(matrix,[contour[i]], axis = 0)
@@ -417,6 +420,47 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           image = logic.GenerateImage(tumor)
           images.append(image)
       return images
+
+  def SimulatorWithOneImage(self):
+      self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+      self.ImageFiducials.SetName('Image')
+      slicer.mrmlScene.AddNode(self.ImageFiducials)
+
+      logic = SimulateAndReconstructLogic()
+      images = logic.Simulator(1,0)
+
+      for k in range(0, len(images[0])):
+          x = images[0][k][0]
+          y = images[0][k][1]
+          z = images[0][k][2]
+          self.ImageFiducials.AddFiducial(x, y, z)
+
+  def SimulatorWithTwoImages(self):
+      self.Image1Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
+      self.Image1Fiducials.SetName('Image1')
+      slicer.mrmlScene.AddNode(self.Image1Fiducials)
+      self.Image2Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
+      self.Image2Fiducials.SetName('Image2')
+      #self.Image2Fiducials.colour(0,1,0)
+      slicer.mrmlScene.AddNode(self.Image2Fiducials)
+
+      logic = SimulateAndReconstructLogic()
+      images = logic.Simulator(2, 0.15)
+      image1 = images[0]
+      image2 = images[1]
+
+      for k in range(0, len(image1)):
+          x = images[0][k][0]
+          y = images[0][k][1]
+          z = images[0][k][2]
+          self.Image1Fiducials.AddFiducial(x,y,z)
+
+      for k in range(0, len(image2)):
+          x = images[0][k][0]
+          y = images[0][k][1]
+          z = images[0][k][2]
+          self.Image2Fiducials.AddFiducial(x , y ,z)
+
 
   def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
     """
@@ -463,45 +507,12 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
     self.TestReconstructor()
 
   def TestSimulatorWithOneImage(self):
-      self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.ImageFiducials.SetName('Image')
-      slicer.mrmlScene.AddNode(self.ImageFiducials)
-
       logic = SimulateAndReconstructLogic()
-      images = logic.Simulator(1,0)
-
-      for k in range(0, len(images[0])):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.ImageFiducials.AddFiducial(x, y, z)
+      logic.SimulatorWithOneImage()
 
   def TestSimulatorWithTwoImages(self):
-      self.Image1Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.Image1Fiducials.SetName('Image1')
-      slicer.mrmlScene.AddNode(self.Image1Fiducials)
-      self.Image2Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.Image2Fiducials.SetName('Image2')
-      #self.Image2Fiducials.colour(0,1,0)
-      slicer.mrmlScene.AddNode(self.Image2Fiducials)
-
       logic = SimulateAndReconstructLogic()
-      images = logic.Simulator(2, 0.15)
-      image1 = images[0]
-      image2 = images[1]
-
-      for k in range(0, len(image1)):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.Image1Fiducials.AddFiducial(x,y,z)
-
-      for k in range(0, len(image2)):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.Image2Fiducials.AddFiducial(x , y ,z)
-
+      logic.SimulatorWithTwoImages()
 
   def TestReconstructor(self):
           logic = SimulateAndReconstructLogic()
@@ -511,14 +522,15 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
           contours = []
           for i in range(0, 10):
               contour = logic.Simulator(1, 0)[0]
-              if i==1:
-                  print 'contour'
-                  print contour
               contours.append(contour)
 
           for i in range(0, 10):
               contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
 
           (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
-          print surfaceArea
-          print Volume
+          VolumeSphere = 65449.5
+          surfaceAreaSphere = 7854
+          volumeRatio = Volume/VolumeSphere
+          surfaceAreaRatio = surfaceArea/surfaceAreaSphere
+          print 'Surface Area ratio: ' + str(surfaceAreaRatio)
+          print 'Volume Ratio: ' + str(volumeRatio)
