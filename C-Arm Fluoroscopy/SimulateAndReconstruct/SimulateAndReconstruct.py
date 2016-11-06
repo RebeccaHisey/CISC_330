@@ -217,14 +217,14 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     annotationLogic = slicer.modules.annotations.logic()
     annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
 
-  # Generates points on the upper half of a sphere, then randomly offsets them
+  # Generates tumour contours that have been elliptically distorted
   # Parameters:
   #    ctr: the center point of the sphere
   #    radius: the radius of the sphere
   #    numPoints: the number of points to be generated
   #    maxOff: the maximum offset
   # Returns:
-  #    dataPoints: the simulated datapoints on the sphere
+  #    dataPoints: the simulated tumour contours
   def TumourContourSimulator(self, ctr, radius, numPoints, maxOff):
 
     dataPoints = []
@@ -235,9 +235,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     for n in range(0,numPoints):
         xOffset = numpy.random.uniform((1-maxOff), (1+maxOff))
         yOffset = numpy.random.uniform((1-maxOff), (1+maxOff))
-        zOffset = numpy.random.uniform((1-maxOff), (1+maxOff))
         phi = numpy.random.randint(-180,180) #angle displaced around the z axis
-        psi = math.acos(2*p[n] - 1) #angle rotated down from the z axis
         x = (radius*math.cos(phi) + ctr[0]) * xOffset
         y = 0
         z = (radius*math.sin(phi) + ctr[1]) * yOffset
@@ -284,6 +282,11 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       return ci
 
+  # Projects the tumour contour points onto the detector plane, transforms points to (u,v,w) coordinate frame
+  # Parameters:
+  #    tumour: the simulated tumour contour
+  # Returns:
+  #    the tumour contour in (u,v,w) coordinates
   def GenerateImage(self,tumour):
     logic = SimulateAndReconstructLogic()
 
@@ -306,6 +309,14 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     projectedPoints = logic.xyzToUVW(projectedPoints)
     return projectedPoints
 
+  # Creates a reconstruction of a tumour given a set of images and angles
+  # Parameters:
+  #    numImages: the number of images
+  #    angles: the angle that the c-arm is rotated in that image, given in (z,x) pairs
+  #    images: the contour images
+  # Returns:
+  #    the surface area of the reconstruction
+  #    the volume of the reconstruction
   def ReconstructTumour(self,numImages, angles, images):
       logic = SimulateAndReconstructLogic()
       reconstructionPoints = []
@@ -321,7 +332,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           source = zRotationMatrix * xRotationMatrix * source
           source = numpy.array([source.item(0), source.item(1), source.item(2)])
           numPoints = len(images[i])
-          imagePoints = logic.uvwToXYZ(angles[i],images[i])
+          imagePoints = logic.uvwToXYZ(angles[i],images[i]) # project points into (x,y,z) coordinates
           for j in range(0,numPoints):
               imagePointSourceLine = source - imagePoints[j]
               imagePointSourceDistance = numpy.linalg.norm(imagePointSourceLine)
@@ -334,6 +345,12 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       return (surfaceArea,Volume)
 
+  # Creates a surface model on a set of points
+  # Parameters:
+  #    numPoints: the number of points
+  #    dataPoints: the points that will be used to create the surface model
+  # Returns:
+  #    the surface area and volume of the model
   def createSurface(self,numPoints, datapoints):
       points = vtk.vtkPoints()
       cellArray = vtk.vtkCellArray()
@@ -382,25 +399,11 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       return (surfaceArea,volume)
 
-  def rotateContour(self, zRotation, xRotation, contour):
-      xRotationMatrix = numpy.matrix([[1, 0, 0],
-                                      [0, numpy.cos(xRotation), numpy.sin(xRotation)],
-                                      [0, (-1) * numpy.sin(xRotation), numpy.cos(xRotation)]])
-      zRotationMatrix = numpy.matrix([[numpy.cos(zRotation), numpy.sin(zRotation), 0],
-                                      [(-1) * numpy.sin(zRotation), numpy.cos(zRotation), 0],
-                                      [0, 0, 1]])
-      matrix = numpy.matrix([contour[0]])
-      for i in range(1,len(contour)):
-          matrix = numpy.append(matrix,[contour[i]], axis = 0)
-      matrixT = numpy.transpose(matrix)
-      rotate = zRotationMatrix*xRotationMatrix*matrixT
-      rotate = numpy.transpose(rotate)
-      rotatedContour = []
-      for i in range(0, len(contour)):
-          point = [rotate.item(i*3),rotate.item(1+i*3),rotate.item(2+i*3)]
-          rotatedContour.append(point)
-      return rotatedContour
-
+  # transforms points from xyz coordinates to (u,v,0) coordinates
+  # Parameters:
+  #    xyzPoints: the points to be transformed
+  # Returns:
+  #    the xyzPoints given in (u,v,0) coordinates
   def xyzToUVW(self,xyzPoints):
       scaleMatrix = numpy.matrix([[1,0,0],
                                   [0,0,1],
@@ -415,6 +418,12 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           transformedPoints.append(transformedPoint)
       return transformedPoints
 
+  # transforms points from (u,v,0) coordinates to xyz space
+  #  Parameters:
+  #    angles: the angle that the image was rotated about the xyz origin
+  #    uvwPoints: the points to be transformed
+  # Returns:
+  #    the (u,v,0) points given in xyz coordinates
   def uvwToXYZ(self,angles, uvwPoints):
       scaleMatrix = numpy.matrix([[1, 0, 0],
                                   [0, 0, 1],
@@ -436,6 +445,12 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           transformedPoints.append(transformedPoint)
       return transformedPoints
 
+  # tumour simulator, generates contours and projects them into (u,v,0) space
+  # Parameters:
+  #    N: the number of images to be taken
+  #    Emax: the maximum distortion
+  # Returns:
+  #    a list of images of the simulated tumour
   def Simulator(self,N,Emax):
       logic = SimulateAndReconstructLogic()
       center = numpy.array([0, 0, 0])
@@ -446,6 +461,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           images.append(image)
       return images
 
+  #Tests the simulator with 1 image with no contour errors
   def SimulatorWithOneImage(self):
       self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
       self.ImageFiducials.SetName('Image')
@@ -460,13 +476,13 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           z = images[0][k][2]
           self.ImageFiducials.AddFiducial(x, y, z)
 
+  #Tests the simulator with 2 images with Emax = 15%
   def SimulatorWithTwoImages(self):
       self.Image1Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
       self.Image1Fiducials.SetName('Image1')
       slicer.mrmlScene.AddNode(self.Image1Fiducials)
       self.Image2Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
       self.Image2Fiducials.SetName('Image2')
-      #self.Image2Fiducials.colour(0,1,0)
       slicer.mrmlScene.AddNode(self.Image2Fiducials)
 
       logic = SimulateAndReconstructLogic()
@@ -529,8 +545,6 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
     self.setUp()
     self.TestSimulatorWithOneImage()
     self.TestSimulatorWithTwoImages()
-    #self.TestReconstructor()
-    self.TestReconstructor2()
 
   def TestSimulatorWithOneImage(self):
       logic = SimulateAndReconstructLogic()
@@ -540,25 +554,5 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
       logic = SimulateAndReconstructLogic()
       logic.SimulatorWithTwoImages()
 
-  def TestReconstructor(self):
-          logic = SimulateAndReconstructLogic()
-
-          angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315), (-45, 0), (0, 45)]
-
-          contours = []
-          for i in range(0, 10):
-              contour = logic.Simulator(1, 0)[0]
-              contours.append(contour)
-
-          for i in range(0, 10):
-              contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
-
-          (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
-          VolumeSphere = 65449.5
-          surfaceAreaSphere = 7854
-          volumeRatio = Volume/VolumeSphere
-          surfaceAreaRatio = surfaceArea/surfaceAreaSphere
-          print 'Surface Area ratio: ' + str(surfaceAreaRatio)
-          print 'Volume Ratio: ' + str(volumeRatio)
 
 

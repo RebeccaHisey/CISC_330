@@ -214,6 +214,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     annotationLogic = slicer.modules.annotations.logic()
     annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
 
+  # Generates a sphere model with 2.5cm radius. Used to check validity of reconstruction
   def GenerateSphere(self):
     sphere = vtk.vtkSphereSource()
     sphere.SetCenter([0, 0, 0])
@@ -230,6 +231,9 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     model.SetAndObserveDisplayNodeID(modelDisplay.GetID())
     slicer.mrmlScene.AddNode(model)
 
+  # Generates the best possible reconstruction, using images taken at all angles
+  # Returns:
+  #    the ratio of the surface areas and volumes compared to the ground truth sphere
   def BestReconstructionOfSphere(self):
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
@@ -242,9 +246,6 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
         contour = logic.Simulator(1, 0)[0]
         contours.append(contour)
 
-      for i in range(0, 24):
-        contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
-
       (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
 
       AnalysisLogic().GenerateSphere()
@@ -256,6 +257,9 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       return (volumeRatio,surfaceAreaRatio)
 
+  # Generates a reconstruction while only rotating about the z axis not the x axis
+  # Returns:
+  #    the ratio of the surface areas and volumes compared to the ground truth sphere
   def OnlyZRotation(self):
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
@@ -265,9 +269,6 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
       for i in range(0, 8):
         contour = logic.Simulator(1, 0)[0]
         contours.append(contour)
-
-      for i in range(0, 8):
-        contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
 
       (surfaceArea, Volume) = logic.ReconstructTumour(8, angles, contours)
 
@@ -280,6 +281,8 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       return (volumeRatio,surfaceAreaRatio)
 
+  # Compares how the surface area ratio and volume ratio change as Emax increases
+  # Returns: the surface area and volume ratios for each value of Emax
   def ReconstructionWithContourErrors(self):
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
@@ -294,9 +297,6 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
             contour = logic.Simulator(1, j)[0]
             contours.append(contour)
 
-          for i in range(0, 24):
-            contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
-
           (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
 
           VolumeSphere = 65449.5
@@ -309,6 +309,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       return dataTuples
 
+  # Creates a chart to visualize the data from ReconstructionWithContourErrors()
   def CreateChart(self,dataTuples):
     lns = slicer.mrmlScene.GetNodesByClass('vtkMRMLLayoutNode')
     lns.InitTraversal()
@@ -332,7 +333,6 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     emaxVsVolume = daNode2.GetArray()
     emaxVsVolume.SetNumberOfTuples(4)
     x = range(0, 4)
-
     for i in range(0, 4):
       emaxVsVolume.SetComponent(i, 0, dataTuples[i][0])
       emaxVsVolume.SetComponent(i, 1, dataTuples[i][1])
@@ -345,7 +345,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
     chartNode.SetProperty('default', 'title', 'Surface Area Ratio and Volume Ratio vs Emax')
     chartNode.SetProperty('default', 'xAxisLabel', 'Emax')
-    chartNode.SetProperty('default', 'yAxisLabel', 'Size difference (%)')
+    chartNode.SetProperty('default', 'yAxisLabel', 'Reconstruction/Ground Truth (%)')
 
     cvn.SetChartNodeID(chartNode.GetID())
 
@@ -391,6 +391,8 @@ class AnalysisTest(ScriptedLoadableModuleTest):
     self.setUp()
     self.test_Analysis1()
 
+  # Tests the ReconstructionWithContourErrors function
+  # displays the values for Emax, Surface area ratio and volume ratio
   def test_Analysis1(self):
     logic = AnalysisLogic()
     comparisonData = logic.ReconstructionWithContourErrors()
