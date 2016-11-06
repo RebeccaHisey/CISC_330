@@ -292,18 +292,6 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     detectorP1 = numpy.array([[1],[-750],[0]])
     normal = numpy.array([[0],[1],[0]])
 
-    #xRotationMatrix = numpy.matrix([[1,0,0],
-     #                               [0,numpy.cos(xRotation),numpy.sin(xRotation)],
-      #                              [0,(-1)*numpy.sin(xRotation),numpy.cos(xRotation)]])
-
-    #zRotationMatrix = numpy.matrix([[numpy.cos(zRotation), numpy.sin(zRotation),0],
-     #                               [(-1)*numpy.sin(zRotation), numpy.cos(zRotation),0],
-      #                              [0,0,1]])
-
-    #source = zRotationMatrix*xRotationMatrix*source
-    #detectorP1 = zRotationMatrix*xRotationMatrix*detectorP1
-    #normal = zRotationMatrix*xRotationMatrix*normal
-
     source = numpy.array([source.item(0), source.item(1), source.item(2)])
     detectorP1 = numpy.array([detectorP1.item(0), detectorP1.item(1), detectorP1.item(2)])
     normal = numpy.array([normal.item(0), normal.item(1), normal.item(2)])
@@ -315,6 +303,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
         point = logic.LineAndPlane(source, tumour[i], detectorP1, normal)
         projectedPoints.append(point)
 
+    projectedPoints = logic.xyzToUVW(projectedPoints)
     return projectedPoints
 
   def ReconstructTumour(self,numImages, angles, images):
@@ -332,13 +321,14 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           source = zRotationMatrix * xRotationMatrix * source
           source = numpy.array([source.item(0), source.item(1), source.item(2)])
           numPoints = len(images[i])
+          imagePoints = logic.uvwToXYZ(angles[i],images[i])
           for j in range(0,numPoints):
-              imagePointSourceLine = source - images[i][j]
+              imagePointSourceLine = source - imagePoints[j]
               imagePointSourceDistance = numpy.linalg.norm(imagePointSourceLine)
               pointSourceLine = imagePointSourceLine/imagePointSourceDistance
               projectedPointSourceDistance = (750*1500)/imagePointSourceDistance
               imageProjectedPointDisance = imagePointSourceDistance - projectedPointSourceDistance
-              projectedPoint = images[i][j] + imageProjectedPointDisance*pointSourceLine
+              projectedPoint = imagePoints[j] + imageProjectedPointDisance*pointSourceLine
               reconstructionPoints.append(projectedPoint)
       surfaceArea,Volume = logic.createSurface(numImages*numPoints,reconstructionPoints)
 
@@ -411,10 +401,45 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           rotatedContour.append(point)
       return rotatedContour
 
+  def xyzToUVW(self,xyzPoints):
+      scaleMatrix = numpy.matrix([[1,0,0],
+                                  [0,0,1],
+                                  [0,0,0]])
+      transformedPoints = []
+      for i in range(0,len(xyzPoints)):
+          point = numpy.array([[xyzPoints[i][0]],
+                               [xyzPoints[i][1]],
+                               [xyzPoints[i][2]]])
+          transformedPoint = scaleMatrix*point
+          transformedPoint = [transformedPoint.item(0),transformedPoint.item(1),transformedPoint.item(2)]
+          transformedPoints.append(transformedPoint)
+      return transformedPoints
+
+  def uvwToXYZ(self,angles, uvwPoints):
+      scaleMatrix = numpy.matrix([[1, 0, 0],
+                                  [0, 0, 1],
+                                  [0, 1, 0]])
+      translationVector = numpy.array([[0],[-750],[0]])
+      zRotationMatrix = numpy.matrix([[numpy.cos(angles[0]), numpy.sin(angles[0]), 0],
+                                      [(-1) * numpy.sin(angles[0]), numpy.cos(angles[0]), 0],
+                                      [0, 0, 1]])
+      xRotationMatrix = numpy.matrix([[1, 0, 0],
+                                      [0, numpy.cos(angles[1]), numpy.sin(angles[1])],
+                                      [0, (-1) * numpy.sin(angles[1]), numpy.cos(angles[1])]])
+      transformedPoints = []
+      for i in range(0, len(uvwPoints)):
+          point = numpy.array([[uvwPoints[i][0]],
+                               [uvwPoints[i][1]],
+                               [uvwPoints[i][2]]])
+          transformedPoint = zRotationMatrix*xRotationMatrix*((scaleMatrix * point) + translationVector)
+          transformedPoint = [transformedPoint.item(0), transformedPoint.item(1), transformedPoint.item(2)]
+          transformedPoints.append(transformedPoint)
+      return transformedPoints
+
   def Simulator(self,N,Emax):
       logic = SimulateAndReconstructLogic()
       center = numpy.array([0, 0, 0])
-      tumor = logic.TumourContourSimulator(center,25,50,Emax)
+      tumor = logic.TumourContourSimulator(center,25,25,Emax)
       images = []
       for i in range(0,N):
           image = logic.GenerateImage(tumor)
@@ -537,44 +562,3 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
           print 'Volume Ratio: ' + str(volumeRatio)
 
 
-  def TestReconstructor2(self):
-    logic = SimulateAndReconstructLogic()
-
-    angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
-              (45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
-              (-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
-
-    contours = []
-    for i in range(0, 10):
-        contour = logic.Simulator(1, 0.15)[0]
-        contours.append(contour)
-
-    for i in range(0, 10):
-        contours[i] = logic.rotateContour(angles[i][0], angles[i][1], contours[i])
-
-    (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
-    VolumeSphere = 65449.5
-    surfaceAreaSphere = 7854
-    volumeRatio = Volume / VolumeSphere
-    surfaceAreaRatio = surfaceArea / surfaceAreaSphere
-    sphere = vtk.vtkSphereSource()
-    sphere.SetCenter([0, 0, 0])
-    radius = 25
-    sphere.SetRadius(radius)
-    sphere.SetPhiResolution(30)
-    sphere.SetThetaResolution(30)
-    sphere.Update()
-
-    # Get a reference to the markup
-
-    # Create model node and add to scene
-    model = slicer.vtkMRMLModelNode()
-    model.SetAndObservePolyData(sphere.GetOutput())
-    modelDisplay = slicer.vtkMRMLModelDisplayNode()
-    modelDisplay.SetVisibility(True)  # Hide in 3D view
-    slicer.mrmlScene.AddNode(modelDisplay)
-    model.SetAndObserveDisplayNodeID(modelDisplay.GetID())
-    slicer.mrmlScene.AddNode(model)
-
-    print 'Surface Area ratio: ' + str(surfaceAreaRatio)
-    print 'Volume Ratio: ' + str(volumeRatio)
