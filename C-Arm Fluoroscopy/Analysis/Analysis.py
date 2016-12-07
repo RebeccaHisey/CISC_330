@@ -3,7 +3,9 @@ import unittest
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
-import SimulateAndReconstruct
+import math
+import numpy
+
 
 #
 # Analysis
@@ -215,10 +217,9 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
 
   # Generates a sphere model with 2.5cm radius. Used to check validity of reconstruction
-  def GenerateSphere(self):
+  def GenerateSphere(self, center, radius):
     sphere = vtk.vtkSphereSource()
     sphere.SetCenter([0, 0, 0])
-    radius = 25
     sphere.SetRadius(radius)
     sphere.SetPhiResolution(30)
     sphere.SetThetaResolution(30)
@@ -235,11 +236,12 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
   # Returns:
   #    the ratio of the surface areas and volumes compared to the ground truth sphere
   def BestReconstructionOfSphere(self):
+      import SimulateAndReconstruct
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
-      angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
-                (45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
-                (-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
+      angles = [(0, -180), (0, -135), (0, -90), (0, -45), (0, 0), (0, 45), (0, 90), (0, 135),
+                (45, -180), (45, -135), (45, -90), (45, -45), (45, 0), (45, 45), (45, 90), (45, 135),
+                (-45, -180), (-45, -135), (-45, -90), (-45, -45), (-45, 0), (-45, 45), (-45, 90), (-45, 135)]
 
       contours = []
       for i in range(0, 24):
@@ -248,7 +250,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
 
-      AnalysisLogic().GenerateSphere()
+      self.GenerateSphere([0,0,0],25)
 
       VolumeSphere = 65449.5
       surfaceAreaSphere = 7854
@@ -257,10 +259,46 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       return (volumeRatio,surfaceAreaRatio)
 
+      # Generates the best possible reconstruction, using images taken at all angles
+      # Returns:
+      #    the ratio of the surface areas and volumes compared to the ground truth sphere
+
+  def ReconstructionOfSphere(self, NumImages, center, radius, Emax):
+    import SimulateAndReconstruct
+    logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
+
+    #angles = [(-180, 0), (-135, 0), (-90, 0), (-45, 0), (0, 0), (45, 0), (90, 0), (135, 0),
+     #         (-180, 45), (-135, 45), (-90, 45), (-45, 45), (0, 45), (45, 45), (90, 45), (135, 45),
+      #        (-180, -45), (-135, -45), (-90, -45), (-45, -45), (0, -45), (45, -45), (90, -45), (135, -45)]
+
+    angles = []
+    NumXAngles = int(math.pow(NumImages,0.5))
+    NumZAngles = int(math.ceil((float(NumImages))/NumXAngles))
+    zAngles = numpy.linspace(0, 360, NumZAngles, dtype = int).tolist()
+    xAngles = numpy.linspace(-45, 45, NumXAngles, dtype = int).tolist()
+    for i in range (0,NumXAngles):
+      for j in range (0,NumZAngles):
+          angles.append((zAngles[j],xAngles[i]))
+    print angles
+
+    contours = logic.Simulator(NumImages,center,radius,Emax)
+
+    (surfaceArea, Volume) = logic.ReconstructTumour(NumImages, angles, contours)
+
+    self.GenerateSphere(center, radius)
+
+    VolumeSphere = (4.0/3.0)*math.pi*math.pow(radius,3)
+    surfaceAreaSphere = 4*math.pi*math.pow(radius,2)
+    volumeRatio = Volume / VolumeSphere
+    surfaceAreaRatio = surfaceArea / surfaceAreaSphere
+
+    return (volumeRatio, surfaceAreaRatio)
+
   # Generates a reconstruction while only rotating about the z axis not the x axis
   # Returns:
   #    the ratio of the surface areas and volumes compared to the ground truth sphere
   def OnlyZRotation(self):
+      import SimulateAndReconstruct
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
       angles = [(0, 0), (45, 0), (90, 0), (135, 0), (180, 0), (225, 0), (270, 0), (315, 0)]
@@ -272,7 +310,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       (surfaceArea, Volume) = logic.ReconstructTumour(8, angles, contours)
 
-      AnalysisLogic().GenerateSphere()
+      self.GenerateSphere()
 
       VolumeSphere = 65449.5
       surfaceAreaSphere = 7854
@@ -284,6 +322,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
   # Compares how the surface area ratio and volume ratio change as Emax increases
   # Returns: the surface area and volume ratios for each value of Emax
   def ReconstructionWithContourErrors(self):
+      import SimulateAndReconstruct
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
       angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
@@ -299,13 +338,13 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
           (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
 
-          VolumeSphere = 65449.5
-          surfaceAreaSphere = 7854
-          volumeRatio = Volume / VolumeSphere
-          surfaceAreaRatio = surfaceArea / surfaceAreaSphere
+          VOLUME_SPHERE_MM3 = 65449.5
+          SURFACE_AREA_SPHERE_MM2 = 7854
+          volumeRatio = Volume / VOLUME_SPHERE_MM3
+          surfaceAreaRatio = surfaceArea / SURFACE_AREA_SPHERE_MM2
           dataTuples.append((j,volumeRatio,surfaceAreaRatio))
 
-      AnalysisLogic().CreateChart(dataTuples)
+      self.CreateChart(dataTuples)
 
       return dataTuples
 

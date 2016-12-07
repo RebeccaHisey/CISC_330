@@ -74,6 +74,32 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     self.inputSelector.setToolTip( "Pick the input to the algorithm." )
     parametersFormLayout.addRow("Input Volume: ", self.inputSelector)
 
+    self.ImagetoDetectorTransform = slicer.qMRMLNodeComboBox()
+    self.ImagetoDetectorTransform.nodeTypes = ['vtkMRMLLinearTransformNode']
+    self.ImagetoDetectorTransform.setMRMLScene(slicer.mrmlScene)
+    parametersFormLayout.addRow("Image to Detector Transform: ", self.ImagetoDetectorTransform)
+
+    self.DetectortoRASTransform = slicer.qMRMLNodeComboBox()
+    self.DetectortoRASTransform.nodeTypes = ['vtkMRMLLinearTransformNode']
+    self.DetectortoRASTransform.setMRMLScene(slicer.mrmlScene)
+    parametersFormLayout.addRow("Detector to RAS Transform: ", self.DetectortoRASTransform)
+
+    self.tumourContour = slicer.qMRMLNodeComboBox()
+    self.tumourContour.nodeTypes = ['vtkMRMLMarkupsFiducialNode']
+    self.tumourContour.setMRMLScene(slicer.mrmlScene)
+    parametersFormLayout.addRow("Tumour Contour: ", self.tumourContour)
+
+    self.ModelFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+    self.ModelFiducials.SetName('Model')
+    slicer.mrmlScene.AddNode(self.ModelFiducials)
+
+    self.outputModel = slicer.vtkMRMLModelNode()
+    self.outputModel.SetName('tumour')
+    slicer.mrmlScene.AddNode(self.outputModel)
+
+    self.outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+    slicer.mrmlScene.AddNode(self.outputDisplayModel)
+
     #
     # output volume selector
     #
@@ -109,16 +135,27 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
 
     #
-    # Apply Button
+    # Add Button
     #
-    self.applyButton = qt.QPushButton("Apply")
-    self.applyButton.toolTip = "Run the algorithm."
+    self.applyButton = qt.QPushButton("Add")
+    self.applyButton.toolTip = "Add a contour to the model."
     self.applyButton.enabled = False
     parametersFormLayout.addRow(self.applyButton)
 
+    #
+    # Add Button
+    #
+    self.removeButton = qt.QPushButton("Remove")
+    self.removeButton.toolTip = "Remove a contour from the model."
+    self.removeButton.enabled = False
+    parametersFormLayout.addRow(self.removeButton)
+
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.removeButton.connect('clicked(bool)', self.onRemoveButton)
+    self.ImagetoDetectorTransform.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.DetectortoRASTransform.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.tumourContour.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
 
     # Add vertical spacer
@@ -131,13 +168,19 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onSelect(self):
-    self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
-
+    self.applyButton.enabled = self.ImagetoDetectorTransform.currentNode() and self.DetectortoRASTransform.currentNode() and self.tumourContour.currentNode()
+    self.removeButton.enabled = self.applyButton.enabled
   def onApplyButton(self):
     logic = SimulateAndReconstructLogic()
     enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
     imageThreshold = self.imageThresholdSliderWidget.value
-    logic.run(self.inputSelector.currentNode(), self.outputSelector.currentNode(), imageThreshold, enableScreenshotsFlag)
+    logic.run(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(), self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+
+  def onRemoveButton(self):
+    logic = SimulateAndReconstructLogic()
+    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
+    imageThreshold = self.imageThresholdSliderWidget.value
+    logic.runWithRemove(self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
 
 #
 # SimulateAndReconstructLogic
@@ -231,10 +274,9 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     numPointsGenerated = 0
     
     #generate coordinates of points
-    p = numpy.linspace(0,1,numPoints).tolist()
+    xOffset = numpy.random.uniform((1 - maxOff), (1 + maxOff))
+    yOffset = numpy.random.uniform((1 - maxOff), (1 + maxOff))
     for n in range(0,numPoints):
-        xOffset = numpy.random.uniform((1-maxOff), (1+maxOff))
-        yOffset = numpy.random.uniform((1-maxOff), (1+maxOff))
         phi = numpy.random.randint(-180,180) #angle displaced around the z axis
         x = (radius*math.cos(phi) + ctr[0]) * xOffset
         y = 0
@@ -288,8 +330,6 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   # Returns:
   #    the tumour contour in (u,v,w) coordinates
   def GenerateImage(self,tumour):
-    logic = SimulateAndReconstructLogic()
-
     source = numpy.array([[0],[750],[0]])
 
     detectorP1 = numpy.array([[1],[-750],[0]])
@@ -303,10 +343,10 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
     projectedPoints = []
 
     for i in range (0, numPoints):
-        point = logic.LineAndPlane(source, tumour[i], detectorP1, normal)
+        point = self.LineAndPlane(source, tumour[i], detectorP1, normal)
         projectedPoints.append(point)
 
-    projectedPoints = logic.xyzToUVW(projectedPoints)
+    projectedPoints = self.xyzToUVW(projectedPoints)
     return projectedPoints
 
   # Creates a reconstruction of a tumour given a set of images and angles
@@ -318,7 +358,6 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   #    the surface area of the reconstruction
   #    the volume of the reconstruction
   def ReconstructTumour(self,numImages, angles, images):
-      logic = SimulateAndReconstructLogic()
       reconstructionPoints = []
       for i in range(0,numImages):
           source = numpy.array([[0], [750], [0]])
@@ -332,7 +371,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           source = zRotationMatrix * xRotationMatrix * source
           source = numpy.array([source.item(0), source.item(1), source.item(2)])
           numPoints = len(images[i])
-          imagePoints = logic.uvwToXYZ(angles[i],images[i]) # project points into (x,y,z) coordinates
+          imagePoints = self.uvwToXYZ(angles[i],images[i]) # project points into (x,y,z) coordinates
           for j in range(0,numPoints):
               imagePointSourceLine = source - imagePoints[j]
               imagePointSourceDistance = numpy.linalg.norm(imagePointSourceLine)
@@ -341,7 +380,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
               imageProjectedPointDisance = imagePointSourceDistance - projectedPointSourceDistance
               projectedPoint = imagePoints[j] + imageProjectedPointDisance*pointSourceLine
               reconstructionPoints.append(projectedPoint)
-      surfaceArea,Volume = logic.createSurface(numImages*numPoints,reconstructionPoints)
+      surfaceArea,Volume = self.createSurface(numImages*numPoints,reconstructionPoints)
 
       return (surfaceArea,Volume)
 
@@ -351,14 +390,17 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   #    dataPoints: the points that will be used to create the surface model
   # Returns:
   #    the surface area and volume of the model
-  def createSurface(self,numPoints, datapoints):
+  def createSurface(self,numPoints, datapoints, outputModel, outputDisplayModel):
       points = vtk.vtkPoints()
       cellArray = vtk.vtkCellArray()
 
       points.SetNumberOfPoints(numPoints)
 
       for i in range(numPoints):
-          points.SetPoint(i, datapoints[i])
+          #points.SetPoint(i, datapoints[i])
+          position = [0, 0, 0]
+          datapoints.GetNthFiducialPosition(i, position)
+          points.SetPoint(i, position)
 
       cellArray.InsertNextCell(numPoints)
       for i in range(numPoints):
@@ -383,17 +425,17 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
       normals.SetInputConnection(surfaceFilter.GetOutputPort())
       normals.SetFeatureAngle(100.0)
 
-      self.tumorModel = slicer.vtkMRMLModelNode()
-      self.tumorModel.SetName("tumour")
-      self.tumorModel.SetPolyDataConnection(normals.GetOutputPort())
-      modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
-      modelDisplayNode.SetColor(0, 1, 0)
-      slicer.mrmlScene.AddNode(modelDisplayNode)
-      self.tumorModel.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
-      self.tumorModel.Modified()
-      slicer.mrmlScene.AddNode(self.tumorModel)
+      #self.tumorModel = slicer.vtkMRMLModelNode()
+      outputModel.SetName("tumour")
+      outputModel.SetPolyDataConnection(normals.GetOutputPort())
+      #modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
+      outputDisplayModel.SetColor(0, 1, 0)
+      slicer.mrmlScene.AddNode(outputDisplayModel)
+      outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
+      outputModel.Modified()
+      slicer.mrmlScene.AddNode(outputModel)
       properties = vtk.vtkMassProperties()
-      properties.SetInputData(self.tumorModel.GetPolyData())
+      properties.SetInputData(outputModel.GetPolyData())
       volume = properties.GetVolume()
       surfaceArea = properties.GetSurfaceArea()
 
@@ -451,13 +493,11 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   #    Emax: the maximum distortion
   # Returns:
   #    a list of images of the simulated tumour
-  def Simulator(self,N,Emax):
-      logic = SimulateAndReconstructLogic()
-      center = numpy.array([0, 0, 0])
-      tumor = logic.TumourContourSimulator(center,25,25,Emax)
+  def Simulator(self,N, center, radius, Emax):
+      tumor = self.TumourContourSimulator(center,radius,25,Emax)
       images = []
       for i in range(0,N):
-          image = logic.GenerateImage(tumor)
+          image = self.GenerateImage(tumor)
           images.append(image)
       return images
 
@@ -485,8 +525,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
       self.Image2Fiducials.SetName('Image2')
       slicer.mrmlScene.AddNode(self.Image2Fiducials)
 
-      logic = SimulateAndReconstructLogic()
-      images = logic.Simulator(2, 0.15)
+      images = self.Simulator(2, 0.15)
       image1 = images[0]
       image2 = images[1]
 
@@ -503,24 +542,57 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           self.Image2Fiducials.AddFiducial(x , y ,z)
 
 
-def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
-    """
-    Run the actual algorithm
-    """
-
-    if not self.isValidInputOutputData(inputVolume, outputVolume):
-      slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
-      return False
+  def run(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
 
     logging.info('Processing started')
 
-    # Compute the thresholded output volume using the Threshold Scalar Volume CLI module
-    cliParams = {'InputVolume': inputVolume.GetID(), 'OutputVolume': outputVolume.GetID(), 'ThresholdValue' : imageThreshold, 'ThresholdType' : 'Above'}
-    cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True)
+    tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
+    tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
 
-    # Capture screenshot
-    if enableScreenshots:
-      self.takeScreenshot('SimulateAndReconstructTest-Start','MyScreenshot',-1)
+    numContourPoints = tumourContour.GetNumberOfFiducials()
+    pos = [0,0,0]
+
+    for i in range (0, numContourPoints):
+        tumourContour.GetNthFiducialPosition(i,pos)
+        modelFiducials.AddFiducial(pos[0],pos[1],pos[2])
+
+    print modelFiducials.GetNumberOfFiducials()
+
+    self.createSurface(modelFiducials.GetNumberOfFiducials(),modelFiducials, outputModel, outputDisplayModel)
+    for j in range (0, modelFiducials.GetNumberOfFiducials()):
+        modelFiducials.SetNthFiducialVisibility(j,False)
+
+    logging.info('Processing completed')
+
+    return True
+
+  def runWithRemove(self, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+
+    logging.info('Processing started')
+
+    numContourPoints = tumourContour.GetNumberOfFiducials()
+
+    toBeRemoved = []
+    for i in range(0, numContourPoints):
+        pos = [0, 0, 0]
+        tumourContour.GetNthFiducialPosition(i, pos)
+        toBeRemoved.append(pos)
+
+    self.tempFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+    for j in range(0,modelFiducials.GetNumberOfFiducials()):
+        pos = [0, 0, 0]
+        modelFiducials.GetNthFiducialPosition(j,pos)
+        if pos not in toBeRemoved:
+            self.tempFiducials.AddFiducial(pos[0],pos[1],pos[2])
+
+    modelFiducials.Copy(self.tempFiducials)
+
+    print modelFiducials.GetNumberOfFiducials()
+
+    self.createSurface(modelFiducials.GetNumberOfFiducials(), modelFiducials, outputModel, outputDisplayModel)
+
+    for j in range(0, modelFiducials.GetNumberOfFiducials()):
+        modelFiducials.SetNthFiducialVisibility(j, False)
 
     logging.info('Processing completed')
 

@@ -20,6 +20,7 @@ include(${Slicer_USE_FILE})
 #-----------------------------------------------------------------------------
 # Extension modules
 add_subdirectory(SimulateAndReconstruct)
+add_subdirectory(Analysis)
 ## NEXT_MODULE
 
 #-----------------------------------------------------------------------------
