@@ -180,7 +180,7 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     logic = SimulateAndReconstructLogic()
     enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
     imageThreshold = self.imageThresholdSliderWidget.value
-    logic.runWithRemove(self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+    logic.runWithRemove(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
 
 #
 # SimulateAndReconstructLogic
@@ -493,61 +493,60 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   #    Emax: the maximum distortion
   # Returns:
   #    a list of images of the simulated tumour
-  def Simulator(self,N, center, radius, Emax):
+  def Simulator(self, center, radius, Emax):
       tumor = self.TumourContourSimulator(center,radius,25,Emax)
-      images = []
-      for i in range(0,N):
-          image = self.GenerateImage(tumor)
-          images.append(image)
-      return images
+      image = self.GenerateImage(tumor)
+      return image
 
-  #Tests the simulator with 1 image with no contour errors
-  def SimulatorWithOneImage(self):
-      self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.ImageFiducials.SetName('Image')
-      slicer.mrmlScene.AddNode(self.ImageFiducials)
+  def SimulatorWithNImages(self,NumImages):
+      for i in range(0,NumImages):
+          image = self.Simulator([0, 0, 0], 25, 0.15)
+          self.ImageFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+          self.ImageFiducials.SetName('Image'+str(i))
+          slicer.mrmlScene.AddNode(self.ImageFiducials)
+          for k in range(0, len(image)):
+              x = image[k][0]
+              y = image[k][1]
+              z = image[k][2]
+              self.ImageFiducials.AddFiducial(x,y,z)
+      self.SimulateTransformsForNImages()
 
-      logic = SimulateAndReconstructLogic()
-      images = logic.Simulator(1,0)
+  def SimulateTransformsForNImages(self):
+    angles = [(0, -180), (0, -135), (0, -90), (0, -45), (0, 0), (0, 45), (0, 90), (0, 135),
+              (45, -180), (45, -135), (45, -90), (45, -45), (45, 0), (45, 45), (45, 90), (45, 135),
+              (-45, -180), (-45, -135), (-45, -90), (-45, -45), (-45, 0), (-45, 45), (-45, 90), (-45, 135)]
 
-      for k in range(0, len(images[0])):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.ImageFiducials.AddFiducial(x, y, z)
+    numAngles = len(angles)
+    for i in range(0, numAngles):
+            self.ImageToDetector = slicer.vtkMRMLLinearTransformNode()
+            self.ImageToDetector.SetName('ImageToDetector'+str(i))
+            slicer.mrmlScene.AddNode(self.ImageToDetector)
 
-  #Tests the simulator with 2 images with Emax = 15%
-  def SimulatorWithTwoImages(self):
-      self.Image1Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.Image1Fiducials.SetName('Image1')
-      slicer.mrmlScene.AddNode(self.Image1Fiducials)
-      self.Image2Fiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      self.Image2Fiducials.SetName('Image2')
-      slicer.mrmlScene.AddNode(self.Image2Fiducials)
+            self.ImageToDetectorTransform = vtk.vtkTransform()
+            self.ImageToDetectorTransform.RotateZ(angles[i][0])
+            self.ImageToDetectorTransform.RotateX(angles[i][1])
 
-      images = self.Simulator(2, 0.15)
-      image1 = images[0]
-      image2 = images[1]
+            self.ImageToDetector.SetAndObserveTransformToParent(self.ImageToDetectorTransform)
 
-      for k in range(0, len(image1)):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.Image1Fiducials.AddFiducial(x,y,z)
+            self.DetectorToRAS = slicer.vtkMRMLLinearTransformNode()
+            self.DetectorToRAS.SetName('DetectorToRAS' + str(i))
+            slicer.mrmlScene.AddNode(self.DetectorToRAS)
 
-      for k in range(0, len(image2)):
-          x = images[0][k][0]
-          y = images[0][k][1]
-          z = images[0][k][2]
-          self.Image2Fiducials.AddFiducial(x , y ,z)
+            self.DetectorToRASTransform = vtk.vtkTransform()
+            self.DetectorToRASTransform.Scale(2,2,2)
+
+            self.DetectorToRAS.SetAndObserveTransformToParent(self.DetectorToRASTransform)
+
 
 
   def run(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
 
     logging.info('Processing started')
 
-    tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
-    tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
+    tumourContour.SetAndObserveTransformNodeID(ImagetoDetector.GetID())
+    ImagetoDetector.SetAndObserveTransformNodeID(DetectortoRAS.GetID())
+    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
+    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
 
     numContourPoints = tumourContour.GetNumberOfFiducials()
     pos = [0,0,0]
@@ -556,6 +555,8 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
         tumourContour.GetNthFiducialPosition(i,pos)
         modelFiducials.AddFiducial(pos[0],pos[1],pos[2])
 
+    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformToParent())
+    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformToParent())
     print modelFiducials.GetNumberOfFiducials()
 
     self.createSurface(modelFiducials.GetNumberOfFiducials(),modelFiducials, outputModel, outputDisplayModel)
@@ -566,17 +567,23 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
     return True
 
-  def runWithRemove(self, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+  def runWithRemove(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
 
     logging.info('Processing started')
 
     numContourPoints = tumourContour.GetNumberOfFiducials()
+
+    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
+    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
 
     toBeRemoved = []
     for i in range(0, numContourPoints):
         pos = [0, 0, 0]
         tumourContour.GetNthFiducialPosition(i, pos)
         toBeRemoved.append(pos)
+
+    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformToParent())
+    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformToParent())
 
     self.tempFiducials = slicer.vtkMRMLMarkupsFiducialNode()
     for j in range(0,modelFiducials.GetNumberOfFiducials()):
