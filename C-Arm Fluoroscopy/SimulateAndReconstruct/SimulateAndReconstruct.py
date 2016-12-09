@@ -137,10 +137,10 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     #
     # Add Button
     #
-    self.applyButton = qt.QPushButton("Add")
-    self.applyButton.toolTip = "Add a contour to the model."
-    self.applyButton.enabled = False
-    parametersFormLayout.addRow(self.applyButton)
+    self.addButton = qt.QPushButton("Add")
+    self.addButton.toolTip = "Add a contour to the model."
+    self.addButton.enabled = False
+    parametersFormLayout.addRow(self.addButton)
 
     #
     # Add Button
@@ -151,7 +151,7 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow(self.removeButton)
 
     # connections
-    self.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.addButton.connect('clicked(bool)', self.onAddButton)
     self.removeButton.connect('clicked(bool)', self.onRemoveButton)
     self.ImagetoDetectorTransform.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.DetectortoRASTransform.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -168,19 +168,20 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onSelect(self):
-    self.applyButton.enabled = self.ImagetoDetectorTransform.currentNode() and self.DetectortoRASTransform.currentNode() and self.tumourContour.currentNode()
-    self.removeButton.enabled = self.applyButton.enabled
-  def onApplyButton(self):
+    self.addButton.enabled = self.ImagetoDetectorTransform.currentNode() and self.DetectortoRASTransform.currentNode() and self.tumourContour.currentNode()
+    self.removeButton.enabled = self.addButton.enabled
+  def onAddButton(self):
     logic = SimulateAndReconstructLogic()
+    #logging.debug("1")
     enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
     imageThreshold = self.imageThresholdSliderWidget.value
-    logic.run(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(), self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+    logic.AddContourToModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(), self.ModelFiducials, self.outputModel, self.outputDisplayModel)
 
   def onRemoveButton(self):
     logic = SimulateAndReconstructLogic()
     enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
     imageThreshold = self.imageThresholdSliderWidget.value
-    logic.runWithRemove(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+    logic.RemoveContourFromModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
 
 #
 # SimulateAndReconstructLogic
@@ -523,7 +524,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
             slicer.mrmlScene.AddNode(self.ImageToDetector)
 
             self.ImageToDetectorTransform = vtk.vtkTransform()
-            self.ImageToDetectorTransform.RotateZ(angles[i][0])
+            self.ImageToDetectorTransform.RotateY(angles[i][0])
             self.ImageToDetectorTransform.RotateX(angles[i][1])
 
             self.ImageToDetector.SetAndObserveTransformToParent(self.ImageToDetectorTransform)
@@ -533,57 +534,55 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
             slicer.mrmlScene.AddNode(self.DetectorToRAS)
 
             self.DetectorToRASTransform = vtk.vtkTransform()
-            self.DetectorToRASTransform.Scale(2,2,2)
+            self.DetectorToRASTransform.Scale(0.5,0.5,0.5)
 
             self.DetectorToRAS.SetAndObserveTransformToParent(self.DetectorToRASTransform)
 
 
 
-  def run(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+  def AddContourToModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
 
     logging.info('Processing started')
 
     tumourContour.SetAndObserveTransformNodeID(ImagetoDetector.GetID())
     ImagetoDetector.SetAndObserveTransformNodeID(DetectortoRAS.GetID())
-    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
-    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
-
+    
     numContourPoints = tumourContour.GetNumberOfFiducials()
-    pos = [0,0,0]
+    pos = [0,0,0,0]
 
     for i in range (0, numContourPoints):
-        tumourContour.GetNthFiducialPosition(i,pos)
+        tumourContour.GetNthFiducialWorldCoordinates(i,pos)
         modelFiducials.AddFiducial(pos[0],pos[1],pos[2])
-
-    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformToParent())
-    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformToParent())
-    print modelFiducials.GetNumberOfFiducials()
 
     self.createSurface(modelFiducials.GetNumberOfFiducials(),modelFiducials, outputModel, outputDisplayModel)
     for j in range (0, modelFiducials.GetNumberOfFiducials()):
         modelFiducials.SetNthFiducialVisibility(j,False)
 
+    tumourContour.SetAndObserveTransformNodeID(None)
+    ImagetoDetector.SetAndObserveTransformNodeID(None)
+
     logging.info('Processing completed')
 
     return True
 
-  def runWithRemove(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+  def RemoveContourFromModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
 
     logging.info('Processing started')
 
     numContourPoints = tumourContour.GetNumberOfFiducials()
 
-    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformFromParent())
-    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformFromParent())
+    tumourContour.SetAndObserveTransformNodeID(ImagetoDetector.GetID())
+    ImagetoDetector.SetAndObserveTransformNodeID(DetectortoRAS.GetID())
 
     toBeRemoved = []
+    pos = [0, 0, 0, 0]
     for i in range(0, numContourPoints):
-        pos = [0, 0, 0]
-        tumourContour.GetNthFiducialPosition(i, pos)
-        toBeRemoved.append(pos)
+        tumourContour.GetNthFiducialWorldCoordinates(i, pos)
+        position = [pos[0],pos[1],pos[2]]
+        toBeRemoved.append(position)
 
-    #tumourContour.ApplyTransformMatrix(ImagetoDetector.GetMatrixTransformToParent())
-    #tumourContour.ApplyTransformMatrix(DetectortoRAS.GetMatrixTransformToParent())
+    tumourContour.SetAndObserveTransformNodeID(None)
+    ImagetoDetector.SetAndObserveTransformNodeID(None)
 
     self.tempFiducials = slicer.vtkMRMLMarkupsFiducialNode()
     for j in range(0,modelFiducials.GetNumberOfFiducials()):
@@ -593,8 +592,6 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
             self.tempFiducials.AddFiducial(pos[0],pos[1],pos[2])
 
     modelFiducials.Copy(self.tempFiducials)
-
-    print modelFiducials.GetNumberOfFiducials()
 
     self.createSurface(modelFiducials.GetNumberOfFiducials(), modelFiducials, outputModel, outputDisplayModel)
 
