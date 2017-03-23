@@ -12,33 +12,23 @@ import random
 #
 
 class SimulateAndReconstruct(ScriptedLoadableModule):
-  """Uses ScriptedLoadableModule base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
     self.parent.title = "SimulateAndReconstruct" # TODO make this more human readable by adding spaces
     self.parent.categories = ["Examples"]
     self.parent.dependencies = []
-    self.parent.contributors = ["John Doe (AnyWare Corp.)"] # replace with "Firstname Lastname (Organization)"
+    self.parent.contributors = ["Rebecca Hisey (Queen's University)"] # replace with "Firstname Lastname (Organization)"
     self.parent.helpText = """
-    This is an example of scripted loadable module bundled in an extension.
-    It performs a simple thresholding on the input volume and optionally captures a screenshot.
     """
     self.parent.acknowledgementText = """
-    This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc.
-    and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
-""" # replace with organization, grant and thanks.
+    """
 
 #
 # SimulateAndReconstructWidget
 #
 
 class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
-  """Uses ScriptedLoadableModuleWidget base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
 
   def __init__(self, parent=None):
       ScriptedLoadableModuleWidget.__init__(self, parent)
@@ -93,12 +83,13 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     self.ModelFiducials.SetName('Model')
     slicer.mrmlScene.AddNode(self.ModelFiducials)
 
-    self.outputModel = slicer.vtkMRMLModelNode()
-    self.outputModel.SetName('tumour')
-    slicer.mrmlScene.AddNode(self.outputModel)
+    #self.outputModel = slicer.vtkMRMLModelNode()
+    #self.outputModel.SetName('tumour')
+    #slicer.mrmlScene.AddNode(self.outputModel)
 
-    self.outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
-    slicer.mrmlScene.AddNode(self.outputDisplayModel)
+    #self.outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+    #self.outputDisplayModel.SetName('tumourDisplay')
+    #slicer.mrmlScene.AddNode(self.outputDisplayModel)
 
     #
     # output volume selector
@@ -114,25 +105,6 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
     self.outputSelector.setMRMLScene( slicer.mrmlScene )
     self.outputSelector.setToolTip( "Pick the output to the algorithm." )
     parametersFormLayout.addRow("Output Volume: ", self.outputSelector)
-
-    #
-    # threshold value
-    #
-    self.imageThresholdSliderWidget = ctk.ctkSliderWidget()
-    self.imageThresholdSliderWidget.singleStep = 0.1
-    self.imageThresholdSliderWidget.minimum = -100
-    self.imageThresholdSliderWidget.maximum = 100
-    self.imageThresholdSliderWidget.value = 0.5
-    self.imageThresholdSliderWidget.setToolTip("Set threshold value for computing the output image. Voxels that have intensities lower than this value will set to zero.")
-    parametersFormLayout.addRow("Image threshold", self.imageThresholdSliderWidget)
-
-    #
-    # check box to trigger taking screen shots for later use in tutorials
-    #
-    self.enableScreenshotsFlagCheckBox = qt.QCheckBox()
-    self.enableScreenshotsFlagCheckBox.checked = 0
-    self.enableScreenshotsFlagCheckBox.setToolTip("If checked, take screen shots for tutorials. Use Save Data to write them to disk.")
-    parametersFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
 
     #
     # Add Button
@@ -170,96 +142,18 @@ class SimulateAndReconstructWidget(ScriptedLoadableModuleWidget):
   def onSelect(self):
     self.addButton.enabled = self.ImagetoDetectorTransform.currentNode() and self.DetectortoRASTransform.currentNode() and self.tumourContour.currentNode()
     self.removeButton.enabled = self.addButton.enabled
+  
   def onAddButton(self):
-    logic = SimulateAndReconstructLogic()
-    #logging.debug("1")
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    imageThreshold = self.imageThresholdSliderWidget.value
-    logic.AddContourToModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(), self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+    self.logic.AddContourToModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(), self.ModelFiducials)
 
   def onRemoveButton(self):
-    logic = SimulateAndReconstructLogic()
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    imageThreshold = self.imageThresholdSliderWidget.value
-    logic.RemoveContourFromModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(),self.ModelFiducials, self.outputModel, self.outputDisplayModel)
+    self.logic.RemoveContourFromModel(self.ImagetoDetectorTransform.currentNode(), self.DetectortoRASTransform.currentNode(),self.tumourContour.currentNode(),self.ModelFiducials)
 
 #
 # SimulateAndReconstructLogic
 #
 
 class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
-  """This class should implement all the actual
-  computation done by your module.  The interface
-  should be such that other python code can import
-  this class and make use of the functionality without
-  requiring an instance of the Widget.
-  Uses ScriptedLoadableModuleLogic base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
-
-  def hasImageData(self,volumeNode):
-    """This is an example logic method that
-    returns true if the passed in volume
-    node has valid image data
-    """
-    if not volumeNode:
-      logging.debug('hasImageData failed: no volume node')
-      return False
-    if volumeNode.GetImageData() is None:
-      logging.debug('hasImageData failed: no image data in volume node')
-      return False
-    return True
-
-  def isValidInputOutputData(self, inputVolumeNode, outputVolumeNode):
-    """Validates if the output is not the same as input
-    """
-    if not inputVolumeNode:
-      logging.debug('isValidInputOutputData failed: no input volume node defined')
-      return False
-    if not outputVolumeNode:
-      logging.debug('isValidInputOutputData failed: no output volume node defined')
-      return False
-    if inputVolumeNode.GetID()==outputVolumeNode.GetID():
-      logging.debug('isValidInputOutputData failed: input and output volume is the same. Create a new volume for output to avoid this error.')
-      return False
-    return True
-
-  def takeScreenshot(self,name,description,type=-1):
-    # show the message even if not taking a screen shot
-    slicer.util.delayDisplay('Take screenshot: '+description+'.\nResult is available in the Annotations module.', 3000)
-
-    lm = slicer.app.layoutManager()
-    # switch on the type to get the requested window
-    widget = 0
-    if type == slicer.qMRMLScreenShotDialog.FullLayout:
-      # full layout
-      widget = lm.viewport()
-    elif type == slicer.qMRMLScreenShotDialog.ThreeD:
-      # just the 3D window
-      widget = lm.threeDWidget(0).threeDView()
-    elif type == slicer.qMRMLScreenShotDialog.Red:
-      # red slice window
-      widget = lm.sliceWidget("Red")
-    elif type == slicer.qMRMLScreenShotDialog.Yellow:
-      # yellow slice window
-      widget = lm.sliceWidget("Yellow")
-    elif type == slicer.qMRMLScreenShotDialog.Green:
-      # green slice window
-      widget = lm.sliceWidget("Green")
-    else:
-      # default to using the full window
-      widget = slicer.util.mainWindow()
-      # reset the type so that the node is set correctly
-      type = slicer.qMRMLScreenShotDialog.FullLayout
-
-    # grab and convert to vtk image data
-    qpixMap = qt.QPixmap().grabWidget(widget)
-    qimage = qpixMap.toImage()
-    imageData = vtk.vtkImageData()
-    slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
-
-    annotationLogic = slicer.modules.annotations.logic()
-    annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
 
   # Generates tumour contours that have been elliptically distorted
   # Parameters:
@@ -371,17 +265,19 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
                                           [0, 0, 1]])
           source = zRotationMatrix * xRotationMatrix * source
           source = numpy.array([source.item(0), source.item(1), source.item(2)])
-          numPoints = len(images[i])
+          numPoints = len(images)
           imagePoints = self.uvwToXYZ(angles[i],images[i]) # project points into (x,y,z) coordinates
           for j in range(0,numPoints):
+
               imagePointSourceLine = source - imagePoints[j]
               imagePointSourceDistance = numpy.linalg.norm(imagePointSourceLine)
               pointSourceLine = imagePointSourceLine/imagePointSourceDistance
               projectedPointSourceDistance = (750*1500)/imagePointSourceDistance
-              imageProjectedPointDisance = imagePointSourceDistance - projectedPointSourceDistance
-              projectedPoint = imagePoints[j] + imageProjectedPointDisance*pointSourceLine
+              imageProjectedPointDistance = imagePointSourceDistance - projectedPointSourceDistance
+              projectedPoint = imagePoints[j] + imageProjectedPointDistance*pointSourceLine
               reconstructionPoints.append(projectedPoint)
-      surfaceArea,Volume = self.createSurface(numImages*numPoints,reconstructionPoints)
+
+      surfaceArea,Volume = self.createSurface(len(reconstructionPoints),reconstructionPoints, "tumour", "tumourDisplay")
 
       return (surfaceArea,Volume)
 
@@ -391,17 +287,33 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
   #    dataPoints: the points that will be used to create the surface model
   # Returns:
   #    the surface area and volume of the model
-  def createSurface(self,numPoints, datapoints, outputModel, outputDisplayModel):
+  def createSurface(self,numPoints, datapoints, outputModelName, outputDisplayModelName):
+
+      outputModel = slicer.mrmlScene.GetFirstNodeByName(outputModelName)
+      outputDisplayModel = slicer.mrmlScene.GetFirstNodeByName(outputDisplayModelName)
+
+      if outputModel == None:
+          outputModel = slicer.vtkMRMLModelNode()
+          outputModel.SetName('tumour')
+          #slicer.mrmlScene.AddNode(outputModel)
+
+      if outputDisplayModel == None:
+          outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+          outputDisplayModel.SetName('tumourDisplay')
+          #slicer.mrmlScene.AddNode(self.outputDisplayModel)
+
       points = vtk.vtkPoints()
       cellArray = vtk.vtkCellArray()
 
       points.SetNumberOfPoints(numPoints)
 
       for i in range(numPoints):
-          #points.SetPoint(i, datapoints[i])
-          position = [0, 0, 0]
-          datapoints.GetNthFiducialPosition(i, position)
-          points.SetPoint(i, position)
+          if str(type(datapoints)) == "<type 'list'>":
+              points.SetPoint(i, datapoints[i])
+          else:
+              position = [0, 0, 0, 0]
+              datapoints.GetNthFiducialWorldCoordinates(i, position)
+              points.SetPoint(i, [position[0],position[1],position[2]])
 
       cellArray.InsertNextCell(numPoints)
       for i in range(numPoints):
@@ -426,10 +338,8 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
       normals.SetInputConnection(surfaceFilter.GetOutputPort())
       normals.SetFeatureAngle(100.0)
 
-      #self.tumorModel = slicer.vtkMRMLModelNode()
-      outputModel.SetName("tumour")
+      #outputModel.SetName("tumour")
       outputModel.SetPolyDataConnection(normals.GetOutputPort())
-      #modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
       outputDisplayModel.SetColor(0, 1, 0)
       slicer.mrmlScene.AddNode(outputDisplayModel)
       outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
@@ -510,12 +420,13 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
               y = image[k][1]
               z = image[k][2]
               self.ImageFiducials.AddFiducial(x,y,z)
-      self.SimulateTransformsForNImages()
+      angles = [(0, -180), (0, -135), (0, -90), (0, -45), (0, 0), (0, 45), (0, 90), (0, 135),
+                (45, -180), (45, -135), (45, -90), (45, -45), (45, 0), (45, 45), (45, 90), (45, 135),
+                (-45, -180), (-45, -135), (-45, -90), (-45, -45), (-45, 0), (-45, 45), (-45, 90), (-45, 135)]
 
-  def SimulateTransformsForNImages(self):
-    angles = [(0, -180), (0, -135), (0, -90), (0, -45), (0, 0), (0, 45), (0, 90), (0, 135),
-              (45, -180), (45, -135), (45, -90), (45, -45), (45, 0), (45, 45), (45, 90), (45, 135),
-              (-45, -180), (-45, -135), (-45, -90), (-45, -45), (-45, 0), (-45, 45), (-45, 90), (-45, 135)]
+      self.SimulateTransformsForNImages(angles)
+
+  def SimulateTransformsForNImages(self,angles):
 
     numAngles = len(angles)
     for i in range(0, numAngles):
@@ -534,13 +445,187 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
             slicer.mrmlScene.AddNode(self.DetectorToRAS)
 
             self.DetectorToRASTransform = vtk.vtkTransform()
-            self.DetectorToRASTransform.Scale(0.5,0.5,0.5)
+            self.DetectorToRASTransform.Scale(2,2,2)
 
             self.DetectorToRAS.SetAndObserveTransformToParent(self.DetectorToRASTransform)
 
+  def CreateSlab(self, ImagetoDetector, DetectortoRAS, imageNo):
+
+      tumourContour = slicer.mrmlScene.GetFirstNodeByName("contour")
+
+      slabFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+      slabFiducials.SetName('Slab'+str(imageNo))
+      slicer.mrmlScene.AddNode(slabFiducials)
+
+      #slabRadius = self.FindLargestRadius(tumourContour)
+      slabRadius = 25
+      shrinkFactor = math.pow((750 - 2*slabRadius)/ 1500.0,2)
+      enlargeFactor = math.pow((750 + 2*slabRadius)/1500.0,2)
+      slabSourceEnd = slicer.vtkMRMLLinearTransformNode()
+      slabSourceEnd.SetName('SlabSourceEnd'+str(imageNo))
+      slicer.mrmlScene.AddNode(slabSourceEnd)
+
+      slabSourceEndTransform = vtk.vtkTransform()
+      slabSourceEndTransform.Translate(0,0,2*slabRadius)
+      slabSourceEndTransform.Scale(shrinkFactor,shrinkFactor,shrinkFactor)
+      slabSourceEnd.SetAndObserveTransformToParent(slabSourceEndTransform)
+
+      tumourContour.SetAndObserveTransformNodeID(slabSourceEnd.GetID())
+      numContourPoints = tumourContour.GetNumberOfFiducials()
+      pos = [0, 0, 0, 0]
+
+      for i in range(0, numContourPoints):
+          tumourContour.GetNthFiducialWorldCoordinates(i, pos)
+          slabFiducials.AddFiducial(pos[0], pos[1], pos[2])
+
+      tumourContour.SetAndObserveTransformNodeID(None)
+
+      slabDetectorEnd = slicer.vtkMRMLLinearTransformNode()
+      slabDetectorEnd.SetName('SlabDetectorEnd')
+      slicer.mrmlScene.AddNode(slabDetectorEnd)
+      slabDetectorEndTransform = vtk.vtkTransform()
+      slabDetectorEndTransform.Translate(0,0,-2*slabRadius)
+      slabDetectorEndTransform.Scale(enlargeFactor, enlargeFactor, enlargeFactor)
+      slabDetectorEnd.SetAndObserveTransformToParent(slabDetectorEndTransform)
+
+      tumourContour.SetAndObserveTransformNodeID(slabDetectorEnd.GetID())
+
+      for i in range(0, numContourPoints):
+          tumourContour.GetNthFiducialWorldCoordinates(i, pos)
+          slabFiducials.AddFiducial(pos[0], pos[1], pos[2])
+
+      tumourContour.SetAndObserveTransformNodeID(None)
+      slabFiducials.SetAndObserveTransformNodeID(ImagetoDetector.GetID())
+      ImagetoDetector.SetAndObserveTransformNodeID(DetectortoRAS.GetID())
+
+      self.outputModel = slicer.mrmlScene.GetFirstNodeByName('tumour'+str(imageNo))
+      self.outputDisplayModel = slicer.mrmlScene.GetFirstNodeByName('tumourDisplay'+str(imageNo))
+      if self.outputModel == None:
+          self.outputModel = slicer.vtkMRMLModelNode()
+          self.outputModel.SetName('tumour'+str(imageNo))
+          slicer.mrmlScene.AddNode(self.outputModel)
+
+          self.outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+          self.outputDisplayModel.SetName('tumourDisplay'+str(imageNo))
+          slicer.mrmlScene.AddNode(self.outputDisplayModel)
+
+      self.createSurface(slabFiducials.GetNumberOfFiducials(), slabFiducials, self.outputModel.GetName(), self.outputDisplayModel.GetName())
+
+      for j in range(0,slabFiducials.GetNumberOfFiducials()):
+          slabFiducials.SetNthFiducialVisibility(j,False)
 
 
-  def AddContourToModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+  def IntersectionPolyDataFilter(self,model1,model2):
+      intersectionPolyDataFilter = vtk.vtkIntersectionPolyDataFilter()
+
+      intersectionPolyDataFilter.SetInputConnection(0, model1.GetPolyDataConnection())
+      intersectionPolyDataFilter.SetInputConnection(1, model2.GetPolyDataConnection())
+      intersectionPolyDataFilter.Update()
+
+      delaunay = vtk.vtkDelaunay3D()
+      delaunay.SetInputConnection(intersectionPolyDataFilter.GetOutputPort())
+
+      surfaceFilter = vtk.vtkDataSetSurfaceFilter()
+      surfaceFilter.SetInputConnection(delaunay.GetOutputPort())
+
+      normals = vtk.vtkPolyDataNormals()
+      normals.SetInputConnection(surfaceFilter.GetOutputPort())
+      normals.SetFeatureAngle(100.0)
+
+      outputModel = slicer.vtkMRMLModelNode()
+      outputModel.SetName("Intersection")
+      outputModel.SetPolyDataConnection(normals.GetOutputPort())
+      outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+      outputDisplayModel.SetColor(1, 0, 0)
+      slicer.mrmlScene.AddNode(outputDisplayModel)
+      outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
+      outputModel.Modified()
+      slicer.mrmlScene.AddNode(outputModel)
+
+  def BooleanOperation(self,model1,model2):
+
+      booleanOperation =vtk.vtkBooleanOperationPolyDataFilter()
+
+      booleanOperation.SetOperationToIntersection()
+      booleanOperation.SetInputData(0, model1.GetPolyData())
+      booleanOperation.SetInputData(1, model2.GetPolyData())
+
+      booleanOperationMapper = vtk.vtkPolyDataMapper()
+      booleanOperationMapper.SetInputConnection(booleanOperation.GetOutputPort())
+      booleanOperationMapper.ScalarVisibilityOff()
+
+      delaunay = vtk.vtkDelaunay3D()
+      delaunay.SetInputConnection(booleanOperation.GetOutputPort())
+
+      surfaceFilter = vtk.vtkDataSetSurfaceFilter()
+      surfaceFilter.SetInputConnection(delaunay.GetOutputPort())
+
+      normals = vtk.vtkPolyDataNormals()
+      normals.SetInputConnection(surfaceFilter.GetOutputPort())
+      normals.SetFeatureAngle(100.0)
+
+      outputModel = slicer.mrmlScene.GetFirstNodeByName("Boolean")
+      outputDisplayModel = slicer.mrmlScene.GetFirstNodeByName("BooleanDisplay")
+      if outputModel == None:
+          outputModel = slicer.vtkMRMLModelNode()
+          outputModel.SetName("Boolean")
+      if outputDisplayModel == None:
+          outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+          outputDisplayModel.SetName("BooleanDisplay")
+          outputDisplayModel.SetColor(0, 0, 1)
+          slicer.mrmlScene.AddNode(outputDisplayModel)
+      outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
+      outputModel.SetPolyDataConnection(normals.GetOutputPort())
+      #outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
+      #outputDisplayModel.SetColor(0, 0, 1)
+      #slicer.mrmlScene.AddNode(outputDisplayModel)
+
+      outputModel.Modified()
+      slicer.mrmlScene.AddNode(outputModel)
+
+  def ReconstructTumourFromSlabs(self, angles, contour):
+      self.SimulateTransformsForNImages(angles)
+
+      ImagetoDetector = slicer.mrmlScene.GetFirstNodeByName("ImageToDetector" + str(0))
+      DetectortoRAS = slicer.mrmlScene.GetFirstNodeByName("DetectorToRAS" + str(0))
+      self.CreateSlab(ImagetoDetector, DetectortoRAS,0)
+
+      if len(angles) == 1:
+          slab = slicer.mrmlScene.GetFirstNodeByName("tumour0")
+          slab.GetModelDisplayNode().SetColor(0,0,1)
+      else:
+          ImagetoDetector = slicer.mrmlScene.GetFirstNodeByName("ImageToDetector" + str(1))
+          DetectortoRAS = slicer.mrmlScene.GetFirstNodeByName("DetectorToRAS" + str(1))
+          self.CreateSlab(ImagetoDetector, DetectortoRAS,1)
+
+          firstSlab = slicer.mrmlScene.GetFirstNodeByName("tumour0")
+          secondSlab = slicer.mrmlScene.GetFirstNodeByName("tumour1")
+
+          firstSlab.GetModelDisplayNode().SetOpacity(0)
+          secondSlab.GetModelDisplayNode().SetOpacity(0)
+
+          self.BooleanOperation(firstSlab,secondSlab)
+
+      for i in range(2,len(angles)):
+          ImagetoDetector = slicer.mrmlScene.GetFirstNodeByName("ImageToDetector" + str(i))
+          DetectortoRAS = slicer.mrmlScene.GetFirstNodeByName("DetectorToRAS" + str(i))
+
+          self.CreateSlab(ImagetoDetector,DetectortoRAS, i)
+          CurrentSlab = slicer.mrmlScene.GetFirstNodeByName("tumour"+str(i))
+          CurrentSlab.GetModelDisplayNode().SetOpacity(0)
+
+          IntersectionModel = slicer.mrmlScene.GetFirstNodeByName("Boolean")
+
+          self.BooleanOperation(CurrentSlab,IntersectionModel)
+      intersectionModel = slicer.mrmlScene.GetFirstNodeByName("Boolean")
+      properties = vtk.vtkMassProperties()
+      properties.SetInputData(intersectionModel.GetPolyData())
+      volume = properties.GetVolume()
+      surfaceArea = properties.GetSurfaceArea()
+      return(surfaceArea,volume)
+
+
+  def AddContourToModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials):
 
     logging.info('Processing started')
 
@@ -554,7 +639,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
         tumourContour.GetNthFiducialWorldCoordinates(i,pos)
         modelFiducials.AddFiducial(pos[0],pos[1],pos[2])
 
-    self.createSurface(modelFiducials.GetNumberOfFiducials(),modelFiducials, outputModel, outputDisplayModel)
+    self.createSurface(modelFiducials.GetNumberOfFiducials(),modelFiducials, "tumour", "tumourDisplay")
     for j in range (0, modelFiducials.GetNumberOfFiducials()):
         modelFiducials.SetNthFiducialVisibility(j,False)
 
@@ -565,7 +650,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
     return True
 
-  def RemoveContourFromModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials, outputModel, outputDisplayModel):
+  def RemoveContourFromModel(self, ImagetoDetector, DetectortoRAS, tumourContour, modelFiducials):
 
     logging.info('Processing started')
 
@@ -593,7 +678,7 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
     modelFiducials.Copy(self.tempFiducials)
 
-    self.createSurface(modelFiducials.GetNumberOfFiducials(), modelFiducials, outputModel, outputDisplayModel)
+    self.createSurface(modelFiducials.GetNumberOfFiducials(), modelFiducials, "tumour", "tumourDisplay")
 
     for j in range(0, modelFiducials.GetNumberOfFiducials()):
         modelFiducials.SetNthFiducialVisibility(j, False)
@@ -620,15 +705,15 @@ class SimulateAndReconstructTest(ScriptedLoadableModuleTest):
     """
     self.setUp()
     self.TestSimulatorWithOneImage()
-    self.TestSimulatorWithTwoImages()
+    #self.TestSimulatorWithTwoImages()
 
   def TestSimulatorWithOneImage(self):
       logic = SimulateAndReconstructLogic()
-      logic.SimulatorWithOneImage()
+      logic.SimulatorWithNImages(1)
 
   def TestSimulatorWithTwoImages(self):
       logic = SimulateAndReconstructLogic()
-      logic.SimulatorWithTwoImages()
+      logic.SimulatorWithNImages(2)
 
 
 

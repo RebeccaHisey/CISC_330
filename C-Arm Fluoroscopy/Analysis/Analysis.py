@@ -245,7 +245,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       contours = []
       for i in range(0, 24):
-        contour = logic.Simulator(1, 0)[0]
+        contour = logic.Simulator([0,0,0],25, 0)[0]
         contours.append(contour)
 
       (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
@@ -267,21 +267,21 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     import SimulateAndReconstruct
     logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
-    #angles = [(-180, 0), (-135, 0), (-90, 0), (-45, 0), (0, 0), (45, 0), (90, 0), (135, 0),
-     #         (-180, 45), (-135, 45), (-90, 45), (-45, 45), (0, 45), (45, 45), (90, 45), (135, 45),
-      #        (-180, -45), (-135, -45), (-90, -45), (-45, -45), (0, -45), (45, -45), (90, -45), (135, -45)]
+    angles = [(-180, 0), (-135, 0), (-90, 0), (-45, 0), (0, 0), (45, 0), (90, 0), (135, 0),
+              (-180, 45), (-135, 45), (-90, 45), (-45, 45), (0, 45), (45, 45), (90, 45), (135, 45),
+              (-180, -45), (-135, -45), (-90, -45), (-45, -45), (0, -45), (45, -45), (90, -45), (135, -45)]
 
-    angles = []
-    NumXAngles = int(math.pow(NumImages,0.5))
-    NumZAngles = int(math.ceil((float(NumImages))/NumXAngles))
-    zAngles = numpy.linspace(0, 360, NumZAngles, dtype = int).tolist()
-    xAngles = numpy.linspace(-45, 45, NumXAngles, dtype = int).tolist()
-    for i in range (0,NumXAngles):
-      for j in range (0,NumZAngles):
-          angles.append((zAngles[j],xAngles[i]))
+    #angles = []
+    #NumXAngles = int(math.pow(NumImages,0.5))
+    #NumZAngles = int(math.ceil((float(NumImages))/NumXAngles))
+    #zAngles = numpy.linspace(0, 360, NumZAngles, dtype = int).tolist()
+    #xAngles = numpy.linspace(-45, 45, NumXAngles, dtype = int).tolist()
+    #for i in range (0,NumXAngles):
+    #  for j in range (0,NumZAngles):
+    #      angles.append((zAngles[j],xAngles[i]))
     print angles
 
-    contours = logic.Simulator(NumImages,center,radius,Emax)
+    contours = logic.Simulator(center,radius,Emax)
 
     (surfaceArea, Volume) = logic.ReconstructTumour(NumImages, angles, contours)
 
@@ -305,12 +305,12 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
       contours = []
       for i in range(0, 8):
-        contour = logic.Simulator(1, 0)[0]
+        contour = logic.Simulator([0, 0, 0], 25, 0)[0]
         contours.append(contour)
 
       (surfaceArea, Volume) = logic.ReconstructTumour(8, angles, contours)
 
-      self.GenerateSphere()
+      self.GenerateSphere([0,0,0],25)
 
       VolumeSphere = 65449.5
       surfaceAreaSphere = 7854
@@ -321,28 +321,52 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
   # Compares how the surface area ratio and volume ratio change as Emax increases
   # Returns: the surface area and volume ratios for each value of Emax
-  def ReconstructionWithContourErrors(self):
+  def ReconstructionWithContourErrors(self,reconstructionType):
       import SimulateAndReconstruct
       logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
-      angles = [(0, 0), (0, 45), (0, 90), (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
-                (45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
-                (-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
+      angles = [(0, 0), (0, 45), (0, 90)]#, (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
+                #(45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
+                #(-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
 
       dataTuples = []
-      for j in [0,0.05,0.1,0.15]:
-          contours = []
-          for i in range(0, 24):
-            contour = logic.Simulator(1, j)[0]
-            contours.append(contour)
+      for j in [0,0.05]:#,0.1,0.15]:
+          sumVolumeRatio = 0
+          sumSurfaceAreaRatio = 0
+          for n in range(0,5):
+              slicer.mrmlScene.Clear(0)
+              contours = []
+              '''
+              for i in range(0, 1):
+              contour = logic.Simulator([0, 0, 0], 25, j)
+              contours.append(contour)
+              '''
+              contours = logic.Simulator([0,0,0],25,j)
+              if reconstructionType == "BottomUp":
+                  (surfaceArea, Volume) = logic.ReconstructTumour(24, angles, contours)
+              else:
+                  imagePointsNode = slicer.mrmlScene.GetFirstNodeByName("contour")
+                  if imagePointsNode == None:
+                      imagePointsNode = slicer.vtkMRMLMarkupsFiducialNode()
+                      imagePointsNode.SetName("contour")
+                      slicer.mrmlScene.AddNode(imagePointsNode)
+                  else:
+                      imagePointsNode.RemoveAllMarkups()
+                  for i in range(0, len(contours)):
+                      imagePointsNode.AddFiducial(contours[i][0], contours[i][1], contours[i][2])
+                  for k in range(0, imagePointsNode.GetNumberOfFiducials()):
+                      imagePointsNode.SetNthFiducialVisibility(k, False)
+                  (surfaceArea, Volume) = logic.ReconstructTumourFromSlabs(angles, imagePointsNode)
 
-          (surfaceArea, Volume) = logic.ReconstructTumour(10, angles, contours)
-
-          VOLUME_SPHERE_MM3 = 65449.5
-          SURFACE_AREA_SPHERE_MM2 = 7854
-          volumeRatio = Volume / VOLUME_SPHERE_MM3
-          surfaceAreaRatio = surfaceArea / SURFACE_AREA_SPHERE_MM2
+              VOLUME_SPHERE_MM3 = 65449.5
+              SURFACE_AREA_SPHERE_MM2 = 7854
+              sumVolumeRatio += Volume / VOLUME_SPHERE_MM3
+              sumSurfaceAreaRatio += surfaceArea / SURFACE_AREA_SPHERE_MM2
+          volumeRatio = sumVolumeRatio / 5
+          surfaceAreaRatio = sumSurfaceAreaRatio / 5
           dataTuples.append((j,volumeRatio,surfaceAreaRatio))
+
+      self.GenerateSphere([0, 0, 0], 25)
 
       self.CreateChart(dataTuples)
 
@@ -363,7 +387,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     emaxVsSurfaceArea = daNode.GetArray()
     emaxVsSurfaceArea.SetNumberOfTuples(4)
     x = range(0, 4)
-    for i in range(0,4):
+    for i in range(0,2):
       emaxVsSurfaceArea.SetComponent(i, 0, dataTuples[i][0])
       emaxVsSurfaceArea.SetComponent(i, 1, dataTuples[i][2])
       emaxVsSurfaceArea.SetComponent(i, 2, 0)
@@ -372,7 +396,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     emaxVsVolume = daNode2.GetArray()
     emaxVsVolume.SetNumberOfTuples(4)
     x = range(0, 4)
-    for i in range(0, 4):
+    for i in range(0, 2):
       emaxVsVolume.SetComponent(i, 0, dataTuples[i][0])
       emaxVsVolume.SetComponent(i, 1, dataTuples[i][1])
       emaxVsVolume.SetComponent(i, 2, 0)
@@ -428,14 +452,23 @@ class AnalysisTest(ScriptedLoadableModuleTest):
     """Run as few or as many tests as needed here.
     """
     self.setUp()
-    self.test_Analysis1()
+    #self.test_Analysis1()
+    self.testSlabAnalysis()
 
   # Tests the ReconstructionWithContourErrors function
   # displays the values for Emax, Surface area ratio and volume ratio
   def test_Analysis1(self):
     logic = AnalysisLogic()
-    comparisonData = logic.ReconstructionWithContourErrors()
+    comparisonData = logic.ReconstructionWithContourErrors("BottomUp")
     for i in range(0,len(comparisonData)):
-      print 'Emax: ' + str(comparisonData[0])
-      print 'Volume Ratio: ' + str(comparisonData[1])
-      print 'Surface Area Ratio: ' + str(comparisonData[2]) + '\n'
+      print 'Emax: ' + str(comparisonData[i][0])
+      print 'Volume Ratio: ' + str(comparisonData[i][1])
+      print 'Surface Area Ratio: ' + str(comparisonData[i][2]) + '\n'
+
+  def testSlabAnalysis(self):
+    logic = AnalysisLogic()
+    comparisonData = logic.ReconstructionWithContourErrors("Slab")
+    for i in range(0,len(comparisonData)):
+      print 'Emax: ' + str(comparisonData[i][0])
+      print 'Volume Ratio: ' + str(comparisonData[i][1])
+      print 'Surface Area Ratio: ' + str(comparisonData[i][2]) + '\n'
