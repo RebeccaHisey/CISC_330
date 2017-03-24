@@ -321,20 +321,22 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
 
   # Compares how the surface area ratio and volume ratio change as Emax increases
   # Returns: the surface area and volume ratios for each value of Emax
-  def ReconstructionWithContourErrors(self,reconstructionType):
-      import SimulateAndReconstruct
-      logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
+  def ReconstructionWithContourErrors(self,reconstructionType,logic):
+
+      #import SimulateAndReconstruct
+      #logic = SimulateAndReconstruct.SimulateAndReconstructLogic()
 
       angles = [(0, 0), (0, 45), (0, 90)]#, (0, 135), (0, 180), (0, 225), (0, 270), (0, 315),
                 #(45, 0), (45, 45), (45, 90), (45, 135), (45, 180), (45, 225), (45, 270), (45, 315),
                 #(-45, 0), (-45, 45), (-45, 90), (-45, 135), (-45, 180), (-45, 225), (-45, 270), (-45, 315)]
 
       dataTuples = []
-      for j in [0,0.05]:#,0.1,0.15]:
+      for j in [0,0.05,0.1,0.15]:
           sumVolumeRatio = 0
           sumSurfaceAreaRatio = 0
           for n in range(0,5):
               slicer.mrmlScene.Clear(0)
+              slicer.mrmlScene.RemoveUnusedNodeReferences()
               contours = []
               '''
               for i in range(0, 1):
@@ -357,13 +359,27 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
                   for k in range(0, imagePointsNode.GetNumberOfFiducials()):
                       imagePointsNode.SetNthFiducialVisibility(k, False)
                   (surfaceArea, Volume) = logic.ReconstructTumourFromSlabs(angles, imagePointsNode)
+              intersection = slicer.mrmlScene.GetFirstNodeByName('Boolean')
+              slicer.mrmlScene.RemoveReferencesToNode(intersection)
 
               VOLUME_SPHERE_MM3 = 65449.5
               SURFACE_AREA_SPHERE_MM2 = 7854
               sumVolumeRatio += Volume / VOLUME_SPHERE_MM3
               sumSurfaceAreaRatio += surfaceArea / SURFACE_AREA_SPHERE_MM2
-          volumeRatio = sumVolumeRatio / 5
-          surfaceAreaRatio = sumSurfaceAreaRatio / 5
+
+          if j == 0:
+              previousResults = [(6.051927036094764, 6.032659375960024),(5.782810030975028, 5.890945494688252),(5.562510735333682, 5.774527541543),(5.9765025785561825, 5.993379489326763),(5.68278538860366, 5.849156454505332)]
+          elif j == 0.05:
+              previousResults = [(5.9822899831700695, 6.002798110051187),(6.097524628251323, 6.081775240495312),(6.0394011299433, 6.026090232968416),(5.603526499695636, 5.749862638083356),(6.1922469709611905, 6.139123706891866)]
+          elif j == 0.10:
+              previousResults = [(5.896951244404767, 5.952657536252431),(5.460975399991712, 5.665044780439875),(6.005418828054623, 6.011228002663831),(5.322789937921302, 5.538801534567907),(5.627038784503993, 5.801470173023958)]
+          else:
+              previousResults = [(6.973872784894346, 6.679496155480321),(5.847546358646193, 5.918567799200725),(6.9580301955298465, 6.673434341725031),(5.2450116150225154, 5.498636945457757),(6.926064134499961, 6.621764475178967)]
+          for m in range(0,len(previousResults)):
+              sumVolumeRatio += previousResults[m][0]
+              sumSurfaceAreaRatio += previousResults[m][1]
+          volumeRatio = sumVolumeRatio / 25
+          surfaceAreaRatio = sumSurfaceAreaRatio / 25
           dataTuples.append((j,volumeRatio,surfaceAreaRatio))
 
       self.GenerateSphere([0, 0, 0], 25)
@@ -387,7 +403,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     emaxVsSurfaceArea = daNode.GetArray()
     emaxVsSurfaceArea.SetNumberOfTuples(4)
     x = range(0, 4)
-    for i in range(0,2):
+    for i in range(0,4):
       emaxVsSurfaceArea.SetComponent(i, 0, dataTuples[i][0])
       emaxVsSurfaceArea.SetComponent(i, 1, dataTuples[i][2])
       emaxVsSurfaceArea.SetComponent(i, 2, 0)
@@ -396,7 +412,7 @@ class AnalysisLogic(ScriptedLoadableModuleLogic):
     emaxVsVolume = daNode2.GetArray()
     emaxVsVolume.SetNumberOfTuples(4)
     x = range(0, 4)
-    for i in range(0, 2):
+    for i in range(0, 4):
       emaxVsVolume.SetComponent(i, 0, dataTuples[i][0])
       emaxVsVolume.SetComponent(i, 1, dataTuples[i][1])
       emaxVsVolume.SetComponent(i, 2, 0)
@@ -466,8 +482,11 @@ class AnalysisTest(ScriptedLoadableModuleTest):
       print 'Surface Area Ratio: ' + str(comparisonData[i][2]) + '\n'
 
   def testSlabAnalysis(self):
+    import SimulateAndReconstruct
+    simlogic = SimulateAndReconstruct.SimulateAndReconstructLogic()
+
     logic = AnalysisLogic()
-    comparisonData = logic.ReconstructionWithContourErrors("Slab")
+    comparisonData = logic.ReconstructionWithContourErrors("Slab",simlogic)
     for i in range(0,len(comparisonData)):
       print 'Emax: ' + str(comparisonData[i][0])
       print 'Volume Ratio: ' + str(comparisonData[i][1])

@@ -294,13 +294,13 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       if outputModel == None:
           outputModel = slicer.vtkMRMLModelNode()
-          outputModel.SetName('tumour')
-          #slicer.mrmlScene.AddNode(outputModel)
+          outputModel.SetName(outputModelName)
+          slicer.mrmlScene.AddNode(outputModel)
 
       if outputDisplayModel == None:
           outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
-          outputDisplayModel.SetName('tumourDisplay')
-          #slicer.mrmlScene.AddNode(self.outputDisplayModel)
+          outputDisplayModel.SetName(outputDisplayModelName)
+          slicer.mrmlScene.AddNode(self.outputDisplayModel)
 
       points = vtk.vtkPoints()
       cellArray = vtk.vtkCellArray()
@@ -341,10 +341,10 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
       #outputModel.SetName("tumour")
       outputModel.SetPolyDataConnection(normals.GetOutputPort())
       outputDisplayModel.SetColor(0, 1, 0)
-      slicer.mrmlScene.AddNode(outputDisplayModel)
+      #slicer.mrmlScene.AddNode(outputDisplayModel)
       outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
       outputModel.Modified()
-      slicer.mrmlScene.AddNode(outputModel)
+      #slicer.mrmlScene.AddNode(outputModel)
       properties = vtk.vtkMassProperties()
       properties.SetInputData(outputModel.GetPolyData())
       volume = properties.GetVolume()
@@ -453,18 +453,26 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       tumourContour = slicer.mrmlScene.GetFirstNodeByName("contour")
 
-      slabFiducials = slicer.vtkMRMLMarkupsFiducialNode()
-      slabFiducials.SetName('Slab'+str(imageNo))
-      slicer.mrmlScene.AddNode(slabFiducials)
+      slabFiducials = slicer.mrmlScene.GetFirstNodeByName('Slab'+str(imageNo))
+
+      if slabFiducials == None:
+          slabFiducials = slicer.vtkMRMLMarkupsFiducialNode()
+          slabFiducials.SetName('Slab'+str(imageNo))
+          slicer.mrmlScene.AddNode(slabFiducials)
+      else:
+          slabFiducials.RemoveAllMarkups()
 
       #slabRadius = self.FindLargestRadius(tumourContour)
       slabRadius = 25
       shrinkFactor = math.pow((750 - 2*slabRadius)/ 1500.0,2)
       enlargeFactor = math.pow((750 + 2*slabRadius)/1500.0,2)
-      slabSourceEnd = slicer.vtkMRMLLinearTransformNode()
-      slabSourceEnd.SetName('SlabSourceEnd'+str(imageNo))
-      slicer.mrmlScene.AddNode(slabSourceEnd)
+      slabSourceEnd = slicer.mrmlScene.GetFirstNodeByName('slabSourceEnd'+str(imageNo))
 
+      if slabSourceEnd == None:
+          slabSourceEnd = slicer.vtkMRMLLinearTransformNode()
+          slabSourceEnd.SetName('SlabSourceEnd'+str(imageNo))
+          slicer.mrmlScene.AddNode(slabSourceEnd)
+      slabSourceEnd.SetAndObserveTransformToParent(None)
       slabSourceEndTransform = vtk.vtkTransform()
       slabSourceEndTransform.Translate(0,0,2*slabRadius)
       slabSourceEndTransform.Scale(shrinkFactor,shrinkFactor,shrinkFactor)
@@ -480,9 +488,13 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
 
       tumourContour.SetAndObserveTransformNodeID(None)
 
-      slabDetectorEnd = slicer.vtkMRMLLinearTransformNode()
-      slabDetectorEnd.SetName('SlabDetectorEnd')
-      slicer.mrmlScene.AddNode(slabDetectorEnd)
+      slabDetectorEnd = slicer.mrmlScene.GetFirstNodeByName('slabDetectorEnd' + str(imageNo))
+
+      if slabDetectorEnd == None:
+          slabDetectorEnd = slicer.vtkMRMLLinearTransformNode()
+          slabDetectorEnd.SetName('SlabDetectorEnd'+str(imageNo))
+          slicer.mrmlScene.AddNode(slabDetectorEnd)
+      slabDetectorEnd.SetAndObserveTransformToParent(None)
       slabDetectorEndTransform = vtk.vtkTransform()
       slabDetectorEndTransform.Translate(0,0,-2*slabRadius)
       slabDetectorEndTransform.Scale(enlargeFactor, enlargeFactor, enlargeFactor)
@@ -574,14 +586,15 @@ class SimulateAndReconstructLogic(ScriptedLoadableModuleLogic):
           outputDisplayModel.SetName("BooleanDisplay")
           outputDisplayModel.SetColor(0, 0, 1)
           slicer.mrmlScene.AddNode(outputDisplayModel)
-      outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
+          outputModel.SetAndObserveDisplayNodeID(outputDisplayModel.GetID())
+          slicer.mrmlScene.AddNode(outputModel)
       outputModel.SetPolyDataConnection(normals.GetOutputPort())
       #outputDisplayModel = slicer.vtkMRMLModelDisplayNode()
       #outputDisplayModel.SetColor(0, 0, 1)
       #slicer.mrmlScene.AddNode(outputDisplayModel)
 
       outputModel.Modified()
-      slicer.mrmlScene.AddNode(outputModel)
+
 
   def ReconstructTumourFromSlabs(self, angles, contour):
       self.SimulateTransformsForNImages(angles)
